@@ -26,6 +26,6 @@ setup(
         'prefect'
     ],
     extras_require={
-
+        'test': ['pytest', 'coverage']
     }
 )
