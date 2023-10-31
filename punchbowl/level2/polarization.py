@@ -34,25 +34,21 @@ def define_amatrix() -> np.ndarray:
     phi_p = np.arctan2(np.tan(thmzp[2]) * np.cos(long_arr * u.degree), np.cos(lat_arr * u.degree)) * 180 * u.degree / (
                 np.pi * u.radian)
 
+    phi = np.stack([phi_m, phi_z, phi_p])
+
     # Define the A matrix
     mat_a = np.empty((2048, 2048, 3, 3))
 
-    mat_a[:, :, 0, 0] = (4 * np.cos(phi_m - thmzp[0]) ** 2 - 1) / 3
-    mat_a[:, :, 0, 1] = (4 * np.cos(phi_m - thmzp[1]) ** 2 - 1) / 3
-    mat_a[:, :, 0, 2] = (4 * np.cos(phi_m - thmzp[2]) ** 2 - 1) / 3
-    mat_a[:, :, 1, 0] = (4 * np.cos(phi_z - thmzp[0]) ** 2 - 1) / 3
-    mat_a[:, :, 1, 1] = (4 * np.cos(phi_z - thmzp[1]) ** 2 - 1) / 3
-    mat_a[:, :, 1, 2] = (4 * np.cos(phi_z - thmzp[2]) ** 2 - 1) / 3
-    mat_a[:, :, 2, 0] = (4 * np.cos(phi_p - thmzp[0]) ** 2 - 1) / 3
-    mat_a[:, :, 2, 1] = (4 * np.cos(phi_p - thmzp[1]) ** 2 - 1) / 3
-    mat_a[:, :, 2, 2] = (4 * np.cos(phi_p - thmzp[2]) ** 2 - 1) / 3
+    for i in range(3):
+        for j in range(3):
+            mat_a[:, :, i, j] = (4 * np.cos(phi[i] - thmzp[j]) ** 2 - 1) / 3
 
     return mat_a
 
 
 def resolve_polarization(data_list: List[PUNCHData]) -> List[PUNCHData]:
     """
-    Takes a set of input data in the camera MZP frame.
+    Takes a set of input data in the camera MZP frame and converts to the solar MZP frame.
 
     Parameters
     ----------
@@ -60,6 +56,8 @@ def resolve_polarization(data_list: List[PUNCHData]) -> List[PUNCHData]:
 
     Returns
     -------
+    List[PUNCHData]
+        modified version of the input with polarization resolved
 
     """
 
