@@ -114,6 +114,17 @@ def sample_punchdata_list(sample_punchdata):
     sample_pd2 = sample_punchdata()
     return [sample_pd1, sample_pd2]
 
+@fixture
+def sample_punchdata_triplet(sample_punchdata):
+    """
+    Generate a list of sample PUNCHData objects for testing polarization resolving
+    """
+
+    sample_pd1 = sample_punchdata()
+    sample_pd2 = sample_punchdata()
+    sample_pd3 = sample_punchdata()
+    return [sample_pd1, sample_pd2, sample_pd3]
+
 
 def test_sample_data_creation(sample_data):
     assert isinstance(sample_data, PUNCHData)
