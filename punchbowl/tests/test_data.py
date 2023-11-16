@@ -277,11 +277,17 @@ def test_read_write_uncertainty_data(sample_punchdata):
     assert fitsio_read_uncertainty.dtype == 'uint8'
 
 
+def test_generate_wcs_metadata(sample_punchdata):
+    sample_data = sample_punchdata()
+    sample_header = sample_data._add_wcs_to_header()
+
+    assert isinstance(sample_header, astropy.io.fits.Header)
+
+
 def test_filename_base_generation(sample_punchdata):
     actual = sample_punchdata().filename_base
     expected = "PUNCH_L0_PM1_20230101000001"
     assert actual == expected
-
 
 
 @fixture

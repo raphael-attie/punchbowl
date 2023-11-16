@@ -899,6 +899,32 @@ class PUNCHData(NDCube):
                 f"Found: {os.path.splitext(filename)[1]}"
             )
 
+    # New function - add_wcs_to_header (static?, hidden _ function)
+    # Takes header, takes WCS, takes set of WCS types to write. Does all the work.
+    # Maybe remove all WCS from omniheader, specify names and types per data product / level
+
+    # Take WCS -> header
+    # Iterates through required types, convert wcs, convert to header object, mix in
+    # Make sure to append A, B, etc to keywords for secondary wcs types
+    # Are comments preserved for each keyword? (to_header_string generates them)
+    # add CROTA keyword
+
+    def _add_wcs_to_header(self) -> Header:
+        header_wcs = self.wcs.to_header()
+        output_header = astropy.io.fits.Header()
+        wcs_frames = []
+        if self.meta['CTYPE1'] is not None:
+            wcs_frames.append((self.meta['CTYPE1'].value, self.meta['CTYPE2'].value))
+        if self.meta['CTYPE1A'] is not None:
+            wcs_frames.append((self.meta['CTYPE1A'].value, self.meta['CTYPE2A'].value))
+
+        for wcs_frame, wcs_code in zip(wcs_frames, ['','A']):
+            # ... do the actual conversion here, a trickier problem
+            for key, value in header_wcs.items():
+                output_header[key + wcs_code] = value
+
+        return output_header
+
     def _write_fits(self, filename: str, overwrite: bool=True) -> None:
         """Write PUNCHData elements to FITS files
 
@@ -917,9 +943,10 @@ class PUNCHData(NDCube):
 
         # update the header with the WCS
         wcs_header = self.wcs.to_header()
-        for k, v in wcs_header.items():
-            if k in header:
-                header[k] = v
+        # wcs_header = self._add_wcs_to_header()
+        for key, value in wcs_header.items():
+            if key in header:
+                header[key] = type(header[key])(value)
 
         hdul_list = []
 
@@ -933,9 +960,11 @@ class PUNCHData(NDCube):
             hdu_uncertainty = fits.CompImageHDU(data=self.uncertainty.array)
             hdu_uncertainty.header['BITPIX'] = 8
             # write WCS to uncertainty header
-            for k, v in wcs_header.items():
-                if k in hdu_uncertainty.header:
-                    hdu_uncertainty.header[k] = v
+            for key, value in wcs_header.items():
+                hdu_uncertainty.header[key] = value
+            # for key, value in wcs_header.items():
+            #     if key in hdu_uncertainty.header:
+            #         hdu_uncertainty.header[key] = value
             hdul_list.append(hdu_uncertainty)
 
         hdul = fits.HDUList(hdul_list)
