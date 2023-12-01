@@ -395,6 +395,8 @@ def test_from_fits_for_metadata(tmpdir):
     loaded.meta['LATPOLE'] = 0.0  # a hackish way to circumvent the LATPOLE being moved by astropy
     assert loaded.meta == m
 
+    # fits.HeaderDiff(loaded.meta.to_fits_header(), m.to_fits_header()).report()
+
 
 def test_normalizedmetadata_from_fits_header():
     m = NormalizedMetadata.load_template("PM1", "0")

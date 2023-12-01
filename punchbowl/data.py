@@ -920,6 +920,8 @@ class PUNCHData(NDCube):
 
         for wcs_frame, wcs_code in zip(wcs_frames, ['','A']):
             # ... do the actual conversion here, a trickier problem
+            # Make sure the PC / CD matrix choice is pulled in here
+            # (either CD matrix, or CDELT + PC matrix)
             for key, value in header_wcs.items():
                 output_header[key + wcs_code] = value
 
@@ -942,8 +944,8 @@ class PUNCHData(NDCube):
         header = self.meta.to_fits_header()
 
         # update the header with the WCS
-        wcs_header = self.wcs.to_header()
-        # wcs_header = self._add_wcs_to_header()
+        # wcs_header = self.wcs.to_header()
+        wcs_header = self._add_wcs_to_header()
         for key, value in wcs_header.items():
             if key in header:
                 header[key] = type(header[key])(value)
