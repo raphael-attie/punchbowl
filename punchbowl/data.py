@@ -901,20 +901,6 @@ class PUNCHData(NDCube):
                 f"Found: {os.path.splitext(filename)[1]}"
             )
 
-    # New function - add_wcs_to_header (static?, hidden _ function)
-    # Takes header, takes WCS, takes set of WCS types to write. Does all the work.
-    # Maybe remove all WCS from omniheader, specify names and types per data product / level
-
-    # Take WCS -> header
-    # Iterates through required types, convert wcs, convert to header object, mix in
-    # Make sure to append A, B, etc to keywords for secondary wcs types
-    # Are comments preserved for each keyword? (to_header_string generates them)
-    # add CROTA keyword
-
-    # Currently the function below is called when writing to file,
-    # where it updates the output header and relevant meta keywords.
-    # Should this be the *only* place this is called?
-
     def _add_wcs_to_header(self) -> Header:
         """Computes primary and secondary WCS header cards to add to a data object
 
