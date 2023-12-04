@@ -382,6 +382,7 @@ def test_history_cannot_compare_to_nonhistory_type():
 
 def test_from_fits_for_metadata(tmpdir):
     m = NormalizedMetadata.load_template("PM1", "0")
+    m['DATE-OBS'] = datetime.utcnow().isoformat()
     m.history.add_now("Test", "does it write?")
     m.history.add_now("Test", "how about twice?")
     m['DESCRPTN'] = 'This is a test!'
@@ -394,7 +395,6 @@ def test_from_fits_for_metadata(tmpdir):
     loaded = PUNCHData.from_fits(path)
     loaded.meta['LATPOLE'] = 0.0  # a hackish way to circumvent the LATPOLE being moved by astropy
     assert loaded.meta == m
-
     # fits.HeaderDiff(loaded.meta.to_fits_header(), m.to_fits_header()).report()
 
 

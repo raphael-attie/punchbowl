@@ -10,6 +10,8 @@ from dateutil.parser import parse as parse_datetime
 from astropy.io import fits
 from astropy.nddata import StdDevUncertainty
 from astropy.wcs import WCS
+from astropy.coordinates import SkyCoord, ICRS
+from sunpy.coordinates import frames, sun
 from astropy.io.fits import Header
 import astropy.units as u
 import astropy.wcs.wcsapi
@@ -909,21 +911,50 @@ class PUNCHData(NDCube):
     # Are comments preserved for each keyword? (to_header_string generates them)
     # add CROTA keyword
 
+    # Currently the function below is called when writing to file,
+    # where it updates the output header and relevant meta keywords.
+    # Should this be the *only* place this is called?
+
     def _add_wcs_to_header(self) -> Header:
+        """Computes primary and secondary WCS header cards to add to a data object
+
+        Returns
+        -------
+        Header
+
+        """
         header_wcs = self.wcs.to_header()
         output_header = astropy.io.fits.Header()
-        wcs_frames = []
-        if self.meta['CTYPE1'] is not None:
-            wcs_frames.append((self.meta['CTYPE1'].value, self.meta['CTYPE2'].value))
-        if self.meta['CTYPE1A'] is not None:
-            wcs_frames.append((self.meta['CTYPE1A'].value, self.meta['CTYPE2A'].value))
 
-        for wcs_frame, wcs_code in zip(wcs_frames, ['','A']):
-            # ... do the actual conversion here, a trickier problem
-            # Make sure the PC / CD matrix choice is pulled in here
-            # (either CD matrix, or CDELT + PC matrix)
+        if self.meta['CTYPE1'] is not None:
             for key, value in header_wcs.items():
-                output_header[key + wcs_code] = value
+                output_header[key] = value
+        if self.meta['CTYPE1A'] is not None:
+            for key, value in header_wcs.items():
+                output_header[key + 'A'] = value
+            output_header['CTYPE1A'] = 'RA-ARC'
+            output_header['CTYPE2A'] = 'DEC-ARC'
+
+            center_helio_coord = SkyCoord(self.wcs.wcs.crval[0]*u.arcsec,self.wcs.wcs.crval[1]*u.arcsec,
+                                                   frame=frames.Helioprojective,
+                                                   obstime=self.meta['DATE-OBS'].value,
+                                                   observer='earth')
+
+            center_celestial_coord = center_helio_coord.transform_to(ICRS)
+
+            output_header['CRVAL1A'] = center_celestial_coord.ra.value
+            output_header['CRVAL2A'] = center_celestial_coord.dec.value
+
+            p_angle = sun.P(time=self.meta['DATE-OBS'].value)
+
+            rotation_matrix = np.array([[np.cos(p_angle), -1*np.sin(p_angle)],[np.sin(p_angle), np.cos(p_angle)]])
+
+            pc_celestial = np.matmul(self.wcs.wcs.pc, rotation_matrix)
+
+            output_header['PC1_1A'] = pc_celestial[0, 0]
+            output_header['PC1_2A'] = pc_celestial[0, 1]
+            output_header['PC2_1A'] = pc_celestial[1, 0]
+            output_header['PC2_2A'] = pc_celestial[1, 1]
 
         return output_header
 
@@ -944,11 +975,11 @@ class PUNCHData(NDCube):
         header = self.meta.to_fits_header()
 
         # update the header with the WCS
-        # wcs_header = self.wcs.to_header()
         wcs_header = self._add_wcs_to_header()
         for key, value in wcs_header.items():
             if key in header:
                 header[key] = type(header[key])(value)
+                self.meta[key] = type(header[key])(value)
 
         hdul_list = []
 
