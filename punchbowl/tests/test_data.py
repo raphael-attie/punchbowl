@@ -186,8 +186,8 @@ def simple_ndcube():
     # Taken from NDCube documentation
     data = np.random.rand(4, 4, 5)
     wcs = astropy.wcs.WCS(naxis=3)
-    wcs.wcs.ctype = "WAVE", "HPLT-TAN", "HPLN-TAN"
-    wcs.wcs.cunit = "Angstrom", "deg", "deg"
+    wcs.wcs.ctype = "STOKES", "HPLT-TAN", "HPLN-TAN"
+    wcs.wcs.cunit = "", "deg", "deg"
     wcs.wcs.cdelt = 0.2, 0.5, 0.4
     wcs.wcs.crpix = 0, 2, 2
     wcs.wcs.crval = 10, 0.5, 1

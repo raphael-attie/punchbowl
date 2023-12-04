@@ -926,35 +926,42 @@ class PUNCHData(NDCube):
         header_wcs = self.wcs.to_header()
         output_header = astropy.io.fits.Header()
 
+        if header_wcs['WCSAXES'] == 2:
+            scoord1 = 0
+            scoord2 = 1
+        elif header_wcs['WCSAXES'] == 3:
+            scoord1 = 1
+            scoord2 = 2
+
         if self.meta['CTYPE1'] is not None:
             for key, value in header_wcs.items():
                 output_header[key] = value
         if self.meta['CTYPE1A'] is not None:
             for key, value in header_wcs.items():
                 output_header[key + 'A'] = value
-            output_header['CTYPE1A'] = 'RA-ARC'
-            output_header['CTYPE2A'] = 'DEC-ARC'
+            output_header['CTYPE'+str(scoord1)+'A'] = 'RA-ARC'
+            output_header['CTYPE'+str(scoord2)+'A'] = 'DEC-ARC'
 
-            center_helio_coord = SkyCoord(self.wcs.wcs.crval[0]*u.arcsec,self.wcs.wcs.crval[1]*u.arcsec,
+            center_helio_coord = SkyCoord(self.wcs.wcs.crval[scoord1]*u.arcsec,self.wcs.wcs.crval[scoord2]*u.arcsec,
                                                    frame=frames.Helioprojective,
                                                    obstime=self.meta['DATE-OBS'].value,
                                                    observer='earth')
 
             center_celestial_coord = center_helio_coord.transform_to(ICRS)
 
-            output_header['CRVAL1A'] = center_celestial_coord.ra.value
-            output_header['CRVAL2A'] = center_celestial_coord.dec.value
+            output_header['CRVAL'+str(scoord1)+'A'] = center_celestial_coord.ra.value
+            output_header['CRVAL'+str(scoord1)+'A'] = center_celestial_coord.dec.value
 
             p_angle = sun.P(time=self.meta['DATE-OBS'].value)
 
             rotation_matrix = np.array([[np.cos(p_angle), -1*np.sin(p_angle)],[np.sin(p_angle), np.cos(p_angle)]])
 
-            pc_celestial = np.matmul(self.wcs.wcs.pc, rotation_matrix)
+            pc_celestial = np.matmul(self.wcs.wcs.pc[scoord1:,scoord1:], rotation_matrix)
 
-            output_header['PC1_1A'] = pc_celestial[0, 0]
-            output_header['PC1_2A'] = pc_celestial[0, 1]
-            output_header['PC2_1A'] = pc_celestial[1, 0]
-            output_header['PC2_2A'] = pc_celestial[1, 1]
+            output_header['PC'+str(scoord1+1)+'_'+str(scoord1+1)+'A'] = pc_celestial[0, 0]
+            output_header['PC'+str(scoord1+1)+'_'+str(scoord2+1)+'A'] = pc_celestial[0, 1]
+            output_header['PC'+str(scoord2+1)+'_'+str(scoord1+1)+'A'] = pc_celestial[1, 0]
+            output_header['PC'+str(scoord2+1)+'_'+str(scoord2+1)+'A'] = pc_celestial[1, 1]
 
         return output_header
 
