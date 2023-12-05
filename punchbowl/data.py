@@ -925,8 +925,8 @@ class PUNCHData(NDCube):
         if self.meta['CTYPE1A'] is not None:
             for key, value in header_wcs.items():
                 output_header[key + 'A'] = value
-            output_header['CTYPE'+str(scoord1)+'A'] = 'RA-ARC'
-            output_header['CTYPE'+str(scoord2)+'A'] = 'DEC-ARC'
+            output_header['CTYPE'+str(scoord1+1)+'A'] = 'RA-ARC'
+            output_header['CTYPE'+str(scoord2+1)+'A'] = 'DEC-ARC'
 
             center_helio_coord = SkyCoord(self.wcs.wcs.crval[scoord1]*u.arcsec,self.wcs.wcs.crval[scoord2]*u.arcsec,
                                                    frame=frames.Helioprojective,
@@ -935,8 +935,8 @@ class PUNCHData(NDCube):
 
             center_celestial_coord = center_helio_coord.transform_to(ICRS)
 
-            output_header['CRVAL'+str(scoord1)+'A'] = center_celestial_coord.ra.value
-            output_header['CRVAL'+str(scoord1)+'A'] = center_celestial_coord.dec.value
+            output_header['CRVAL'+str(scoord1+1)+'A'] = center_celestial_coord.ra.value
+            output_header['CRVAL'+str(scoord1+1)+'A'] = center_celestial_coord.dec.value
 
             p_angle = sun.P(time=self.meta['DATE-OBS'].value)
 

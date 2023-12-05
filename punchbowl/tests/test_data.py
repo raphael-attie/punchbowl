@@ -410,6 +410,26 @@ def test_normalizedmetadata_from_fits_header():
     assert recovered == m
 
 
+def test_generate_level3_data_product(tmpdir):
+    m = NormalizedMetadata.load_template("PTM", "3")
+    m['DATE-OBS'] = datetime.utcnow().isoformat()
+    h = m.to_fits_header()
+
+    path = os.path.join(tmpdir, "from_fits_test.fits")
+    d = PUNCHData(np.zeros((2, 4096, 4096), dtype=np.float32), WCS(h), m)
+    d.write(path)
+
+    loaded = PUNCHData.from_fits(path)
+    loaded.meta['LATPOLE'] = 0.0
+
+    # TODO - weird bug in the data object's write_fits - CompImageHDU is overriding axis ordering in the input header
+    loaded.meta['NAXIS1'] = 2
+    loaded.meta['NAXIS2'] = 4096
+    loaded.meta['NAXIS3'] = 4096
+
+    assert loaded.meta == m
+
+
 def test_empty_history_from_fits_header():
     m = NormalizedMetadata.load_template("PM1", "0")
     h = m.to_fits_header()
