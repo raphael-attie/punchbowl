@@ -32,7 +32,6 @@ SECTION,TYPE,KEYWORD,VALUE,COMMENT,DATATYPE,NULLABLE,MUTABLE,DEFAULT
 3,keyword,DATE-AVG,,UTC reference time,str,TRUE,TRUE,
 3,keyword,DATE-END,,UTC time of observation end,str,TRUE,TRUE,
 3,keyword,DATE,,UTC file generation date and time,str,TRUE,TRUE,
-3,keyword,MJDREF,0,[d] MJD of fiducial time,float,TRUE,TRUE,0
 4,section,COMMENT,Instrument and Spacecraft State,,str,TRUE,TRUE, Instrument and Spacecraft State
 4,keyword,WAVELNTH,530,[nm] average peak response,int,TRUE,TRUE,530
 4,keyword,WAVEUNIT,nanometer,Unit of observation measurement,str,TRUE,TRUE,nanometer
