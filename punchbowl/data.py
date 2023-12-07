@@ -12,6 +12,7 @@ from astropy.nddata import StdDevUncertainty
 from astropy.wcs import WCS
 from astropy.coordinates import SkyCoord, ICRS
 from sunpy.coordinates import frames, sun
+from sunpy.map import solar_angular_radius
 from astropy.io.fits import Header
 import astropy.units as u
 import astropy.wcs.wcsapi
@@ -912,6 +913,11 @@ class PUNCHData(NDCube):
         header_wcs = self.wcs.to_header()
         output_header = astropy.io.fits.Header()
 
+        unused_keys = ['DATE-OBS', 'MJD-OBS', 'TELAPSE', 'RSUN_REF', 'TIMESYS']
+
+        for key in unused_keys:
+            if key in header_wcs: del header_wcs[key]
+
         if header_wcs['WCSAXES'] == 2:
             scoord1 = 0
             scoord2 = 1
@@ -949,6 +955,10 @@ class PUNCHData(NDCube):
             output_header['PC'+str(scoord2+1)+'_'+str(scoord1+1)+'A'] = pc_celestial[1, 0]
             output_header['PC'+str(scoord2+1)+'_'+str(scoord2+1)+'A'] = pc_celestial[1, 1]
 
+        output_header['RSUN_ARC'] = solar_angular_radius(center_helio_coord).value
+        output_header['SOLAR_EP'] = p_angle.value
+        output_header['CAR_ROT'] = float(sun.carrington_rotation_number(t=self.meta['DATE-OBS'].value))
+
         return output_header
 
     def _write_fits(self, filename: str, overwrite: bool=True) -> None:
@@ -971,8 +981,10 @@ class PUNCHData(NDCube):
         wcs_header = self._add_wcs_to_header()
         for key, value in wcs_header.items():
             if key in header:
-                header[key] = type(header[key])(value)
-                self.meta[key] = type(header[key])(value)
+                # header[key] = type(header[key])(value)
+                # self.meta[key] = type(header[key])(value)
+                header[key] = (self.meta[key]._datatype)(value)
+                self.meta[key] = (self.meta[key]._datatype)(value)
 
         hdul_list = []
 
