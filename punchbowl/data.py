@@ -914,7 +914,7 @@ class PUNCHData(NDCube):
                 f"Found: {os.path.splitext(filename)[1]}"
             )
 
-    def _add_wcs_to_header(self) -> Header:
+    def construct_wcs_header_fields(self) -> Header:
         """Computes primary and secondary WCS header cards to add to a data object
 
         Returns
@@ -929,14 +929,15 @@ class PUNCHData(NDCube):
                        'MJD-OBS', 'TELAPSE', 'RSUN_REF', 'TIMESYS']
 
         for key in unused_keys:
-            if key in header_wcs: del header_wcs[key]
+            if key in header_wcs:
+                del header_wcs[key]
 
         if header_wcs['WCSAXES'] == 2:
-            scoord1 = 0
-            scoord2 = 1
+            spatial_coord_1 = 0
+            spatial_coord_2 = 1
         elif header_wcs['WCSAXES'] == 3:
-            scoord1 = 1
-            scoord2 = 2
+            spatial_coord_1 = 1
+            spatial_coord_2 = 2
 
         if self.meta['CTYPE1'] is not None:
             for key, value in header_wcs.items():
@@ -944,29 +945,29 @@ class PUNCHData(NDCube):
         if self.meta['CTYPE1A'] is not None:
             for key, value in header_wcs.items():
                 output_header[key + 'A'] = value
-            output_header['CTYPE'+str(scoord1+1)+'A'] = 'RA-ARC'
-            output_header['CTYPE'+str(scoord2+1)+'A'] = 'DEC-ARC'
+            output_header['CTYPE'+str(spatial_coord_1+1)+'A'] = 'RA-ARC'
+            output_header['CTYPE'+str(spatial_coord_2+1)+'A'] = 'DEC-ARC'
 
-            center_helio_coord = SkyCoord(self.wcs.wcs.crval[scoord1]*u.arcsec,self.wcs.wcs.crval[scoord2]*u.arcsec,
+            center_helio_coord = SkyCoord(self.wcs.wcs.crval[spatial_coord_1]*u.arcsec,self.wcs.wcs.crval[spatial_coord_2]*u.arcsec,
                                                    frame=frames.Helioprojective,
                                                    obstime=self.meta['DATE-OBS'].value,
                                                    observer='earth')
 
             center_celestial_coord = center_helio_coord.transform_to(ICRS)
 
-            output_header['CRVAL'+str(scoord1+1)+'A'] = center_celestial_coord.ra.value
-            output_header['CRVAL'+str(scoord1+1)+'A'] = center_celestial_coord.dec.value
+            output_header['CRVAL'+str(spatial_coord_1+1)+'A'] = center_celestial_coord.ra.value
+            output_header['CRVAL'+str(spatial_coord_2+1)+'A'] = center_celestial_coord.dec.value
 
             p_angle = sun.P(time=self.meta['DATE-OBS'].value)
 
             rotation_matrix = np.array([[np.cos(p_angle), -1*np.sin(p_angle)],[np.sin(p_angle), np.cos(p_angle)]])
 
-            pc_celestial = np.matmul(self.wcs.wcs.pc[scoord1:,scoord1:], rotation_matrix)
+            pc_celestial = np.matmul(self.wcs.wcs.pc[spatial_coord_1:,spatial_coord_1:], rotation_matrix)
 
-            output_header['PC'+str(scoord1+1)+'_'+str(scoord1+1)+'A'] = pc_celestial[0, 0]
-            output_header['PC'+str(scoord1+1)+'_'+str(scoord2+1)+'A'] = pc_celestial[0, 1]
-            output_header['PC'+str(scoord2+1)+'_'+str(scoord1+1)+'A'] = pc_celestial[1, 0]
-            output_header['PC'+str(scoord2+1)+'_'+str(scoord2+1)+'A'] = pc_celestial[1, 1]
+            output_header['PC'+str(spatial_coord_1+1)+'_'+str(spatial_coord_1+1)+'A'] = pc_celestial[0, 0]
+            output_header['PC'+str(spatial_coord_1+1)+'_'+str(spatial_coord_2+1)+'A'] = pc_celestial[0, 1]
+            output_header['PC'+str(spatial_coord_2+1)+'_'+str(spatial_coord_1+1)+'A'] = pc_celestial[1, 0]
+            output_header['PC'+str(spatial_coord_2+1)+'_'+str(spatial_coord_2+1)+'A'] = pc_celestial[1, 1]
 
         output_header['RSUN_ARC'] = solar_angular_radius(center_helio_coord).value
         output_header['SOLAR_EP'] = p_angle.value
@@ -994,11 +995,9 @@ class PUNCHData(NDCube):
         header = self.meta.to_fits_header()
 
         # update the header with the WCS
-        wcs_header = self._add_wcs_to_header()
+        wcs_header = self.construct_wcs_header_fields()
         for key, value in wcs_header.items():
             if key in header:
-                # header[key] = type(header[key])(value)
-                # self.meta[key] = type(header[key])(value)
                 header[key] = (self.meta[key]._datatype)(value)
                 self.meta[key] = (self.meta[key]._datatype)(value)
 
@@ -1016,9 +1015,6 @@ class PUNCHData(NDCube):
             # write WCS to uncertainty header
             for key, value in wcs_header.items():
                 hdu_uncertainty.header[key] = value
-            # for key, value in wcs_header.items():
-            #     if key in hdu_uncertainty.header:
-            #         hdu_uncertainty.header[key] = value
             hdul_list.append(hdu_uncertainty)
 
         hdul = fits.HDUList(hdul_list)

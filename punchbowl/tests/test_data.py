@@ -321,7 +321,7 @@ def test_read_write_uncertainty_data(sample_punchdata):
 
 def test_generate_wcs_metadata(sample_punchdata):
     sample_data = sample_punchdata()
-    sample_header = sample_data._add_wcs_to_header()
+    sample_header = sample_data.construct_wcs_header_fields()
 
     assert isinstance(sample_header, astropy.io.fits.Header)
 
@@ -439,7 +439,6 @@ def test_from_fits_for_metadata(tmpdir):
     loaded = PUNCHData.from_fits(path)
     loaded.meta['LATPOLE'] = 0.0  # a hackish way to circumvent the LATPOLE being moved by astropy
     assert loaded.meta == m
-    # fits.HeaderDiff(loaded.meta.to_fits_header(), m.to_fits_header()).report()
 
 
 def test_normalizedmetadata_from_fits_header():
@@ -460,7 +459,7 @@ def test_generate_level3_data_product(tmpdir):
     h = m.to_fits_header()
 
     path = os.path.join(tmpdir, "from_fits_test.fits")
-    d = PUNCHData(np.zeros((2, 4096, 4096), dtype=np.float32), WCS(h), m)
+    d = PUNCHData(np.ones((2, 4096, 4096), dtype=np.float32), WCS(h), m)
     d.write(path)
 
     loaded = PUNCHData.from_fits(path)
