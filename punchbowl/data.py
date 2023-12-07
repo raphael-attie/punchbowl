@@ -913,7 +913,8 @@ class PUNCHData(NDCube):
         header_wcs = self.wcs.to_header()
         output_header = astropy.io.fits.Header()
 
-        unused_keys = ['DATE-OBS', 'MJD-OBS', 'TELAPSE', 'RSUN_REF', 'TIMESYS']
+        unused_keys = ['DATE-OBS', 'DATE-BEG', 'DATE-AVG', 'DATE-END', 'DATE',
+                       'MJD-OBS', 'TELAPSE', 'RSUN_REF', 'TIMESYS']
 
         for key in unused_keys:
             if key in header_wcs: del header_wcs[key]
@@ -991,11 +992,11 @@ class PUNCHData(NDCube):
         hdu_dummy = fits.PrimaryHDU()
         hdul_list.append(hdu_dummy)
 
-        hdu_data = fits.CompImageHDU(data=self.data, header=header)
+        hdu_data = fits.CompImageHDU(data=self.data, header=header, name='Primary data array')
         hdul_list.append(hdu_data)
 
         if self.uncertainty is not None:
-            hdu_uncertainty = fits.CompImageHDU(data=self.uncertainty.array)
+            hdu_uncertainty = fits.CompImageHDU(data=self.uncertainty.array, name='Uncertainty array')
             hdu_uncertainty.header['BITPIX'] = 8
             # write WCS to uncertainty header
             for key, value in wcs_header.items():

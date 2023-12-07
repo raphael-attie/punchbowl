@@ -6,6 +6,7 @@ SECTION,TYPE,KEYWORD,VALUE,COMMENT,DATATYPE,NULLABLE,MUTABLE,DEFAULT
 0,keyword,NAXIS1,3,Length of the first axis,int,TRUE,TRUE,3
 0,keyword,NAXIS2,2048,Length of the second axis,int,TRUE,TRUE,2048
 0,keyword,NAXIS3,2048,Length of the third axis,int,TRUE,TRUE,2048
+0,keyword,EXTNAME,PRIMARY DATA ARRAY,Name of this binary table extension,str,TRUE,TRUE
 0,keyword,LONGSTRN,OGIP 1.0,The OGIP long string convention may be used,str,TRUE,TRUE,OGIP 1.0
 1,section,COMMENT,"Documentation, Contact, and Collection Metadata",,str,TRUE,TRUE," Documentation, Contact, and Collection Metadata"
 1,keyword,DOI,https://doi.org/TBD,Data reference DOI,str,TRUE,TRUE,https://doi.org/TBD
@@ -36,7 +37,7 @@ SECTION,TYPE,KEYWORD,VALUE,COMMENT,DATATYPE,NULLABLE,MUTABLE,DEFAULT
 4,keyword,WAVELNTH,530,[nm] average peak response,int,TRUE,TRUE,530
 4,keyword,WAVEUNIT,nanometer,Unit of observation measurement,str,TRUE,TRUE,nanometer
 4,keyword,FILTER,,Name of filter for observations,str,TRUE,TRUE,
-4,keyword,OBS-MODE,,"Image Mode (Unpolarized, Polar_MZP, or Polar_BpB)",str,TRUE,TRUE,
+4,keyword,OBS-MODE,,"Image Mode (Unpolarized, Polar_MZP, Polar_BpB)",str,TRUE,TRUE,
 4,keyword,OBSLAYR1,,Image Mode for first datacube layer,str,TRUE,TRUE,
 4,keyword,OBSLAYR2,,Image Mode for second datacube layer,str,TRUE,TRUE,
 4,keyword,OBSLAYR3,,Image Mode for third datacube layer,str,TRUE,TRUE,
@@ -138,7 +139,7 @@ SECTION,TYPE,KEYWORD,VALUE,COMMENT,DATATYPE,NULLABLE,MUTABLE,DEFAULT
 7,keyword,COMPBITS,10,[bits] compressed image bits per pixel,int,TRUE,TRUE,10
 7,keyword,SQRTCODE,,square-root coding table name,str,TRUE,TRUE,
 7,keyword,COMPRESS,,image compression type,str,TRUE,TRUE,
-7,keyword,COMP_RAT,,compressed/uncompressed data ratio,float,TRUE,TRUE,
+7,keyword,COMP_RAT,-1.0,compressed/uncompressed data ratio,float,TRUE,TRUE,
 8,section,COMMENT, Calibration Data,,str,TRUE,TRUE, Calibration Data
 8,keyword,CALCF,,quartic fit filename,str,TRUE,TRUE,
 8,keyword,CALVI,,vignetting filename,str,TRUE,TRUE,
