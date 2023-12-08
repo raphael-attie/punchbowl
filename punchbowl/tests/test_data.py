@@ -465,12 +465,16 @@ def test_generate_level3_data_product(tmpdir):
     loaded = PUNCHData.from_fits(path)
     loaded.meta['LATPOLE'] = 0.0
 
-    # TODO - weird bug in the data object's write_fits - CompImageHDU is overriding axis ordering in the input header
-    loaded.meta['NAXIS1'] = 2
-    loaded.meta['NAXIS2'] = 4096
-    loaded.meta['NAXIS3'] = 4096
-
     assert loaded.meta == m
+
+
+def test_axis_ordering():
+    data = np.random.random((2,256,256))
+    hdu_data = fits.ImageHDU(data=data)
+
+    assert hdu_data.header['NAXIS1'] == data.shape[2]
+    assert hdu_data.header['NAXIS2'] == data.shape[1]
+    assert hdu_data.header['NAXIS3'] == data.shape[0]
 
 
 def test_empty_history_from_fits_header():

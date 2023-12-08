@@ -141,9 +141,9 @@ Products:
         kinds: [Calibration]
         overrides:
             NAXIS: 3
-            NAXIS1: 5
+            NAXIS1: 2048
             NAXIS2: 2048
-            NAXIS3: 2048
+            NAXIS3: 5
             TITLE: PUNCH Level-1 {craftname} Flat-field Parameter map (quartic polynomial coefficients)
             OBSTYPE: '{crafttype} flat-field parameter map (quartic polynomial coefficients)'
             TYPECODE: FQ
