@@ -4,11 +4,16 @@ from collections import OrderedDict
 
 import astropy
 import numpy as np
+from numpy.linalg import inv
 import pandas as pd
 import pytest
 from astropy.io import fits
 from astropy.nddata import StdDevUncertainty
 from astropy.wcs import WCS
+from astropy.coordinates import SkyCoord, ICRS, GCRS
+from astropy.time import Time
+from sunpy.coordinates import frames, sun
+import astropy.units as u
 from pytest import fixture
 
 from ndcube import NDCube
@@ -466,6 +471,171 @@ def test_generate_level3_data_product(tmpdir):
     loaded.meta['LATPOLE'] = 0.0
 
     assert loaded.meta == m
+
+
+def test_sun_location():
+    time_current = Time(datetime.utcnow())
+
+    skycoord_sun = astropy.coordinates.get_sun(Time(datetime.utcnow()))
+
+    skycoord_origin = SkyCoord(0*u.arcsec, 0*u.arcsec,
+                              frame=frames.Helioprojective,
+                              obstime=time_current,
+                              observer='earth')
+
+    skycoord_origin_celestial = skycoord_origin.transform_to(GCRS)
+
+    assert skycoord_origin_celestial.separation(skycoord_sun) < 1 * u.deg
+    assert skycoord_origin.separation(skycoord_sun) < 1 * u.deg
+
+
+def test_wcs_center_transformation():
+    m = NormalizedMetadata.load_template("CTM", "3")
+    m['DATE-OBS'] = datetime.utcnow().isoformat()
+    h = m.to_fits_header()
+    d = PUNCHData(np.ones((4096, 4096), dtype=np.float32), WCS(h), m)
+
+    # Update the WCS
+    updated_header = d.construct_wcs_header_fields()[:-3]
+
+    header_helio = astropy.io.fits.Header()
+    header_celestial = astropy.io.fits.Header()
+
+    for key in updated_header.keys():
+        if key[-1] == 'A':
+            header_celestial[key[:-1]] = updated_header[key]
+        else:
+            header_helio[key] = updated_header[key]
+
+    wcs_helio = WCS(header_helio)
+    wcs_celestial = WCS(header_celestial)
+
+    coords_center = np.array([[0,2048.5, 2048.5]])
+    center_helio = wcs_helio.wcs_pix2world(coords_center, 0)
+    center_celestial = wcs_celestial.wcs_pix2world(coords_center, 0)
+
+    skycoord_helio = SkyCoord(center_helio[0,1]*u.arcsec, center_helio[0,2]*u.arcsec,
+                              frame=frames.Helioprojective,
+                              obstime=m['DATE-OBS'].value,
+                              observer='earth')
+    skycoord_celestial = SkyCoord(center_celestial[0,1]*u.deg, center_celestial[0,2]*u.deg,
+                                  frame=GCRS,
+                                  obstime=m['DATE-OBS'].value)
+
+    skycoord_celestial_transform = skycoord_helio.transform_to(GCRS)
+
+    # assert skycoord_celestial.separation(skycoord_helio) < 1 * u.deg
+    assert skycoord_celestial_transform.separation(skycoord_helio) < 1 * u.deg
+
+
+def test_wcs_point_transformation():
+    m = NormalizedMetadata.load_template("CTM", "3")
+    m['DATE-OBS'] = datetime.utcnow().isoformat()
+    h = m.to_fits_header()
+    d = PUNCHData(np.ones((4096, 4096), dtype=np.float32), WCS(h), m)
+
+    # Update the WCS
+    updated_header = d.construct_wcs_header_fields()[:-3]
+
+    header_helio = astropy.io.fits.Header()
+    header_celestial = astropy.io.fits.Header()
+
+    for key in updated_header.keys():
+        if key[-1] == 'A':
+            header_celestial[key[:-1]] = updated_header[key]
+        else:
+            header_helio[key] = updated_header[key]
+
+    wcs_helio = WCS(header_helio)
+    wcs_celestial = WCS(header_celestial)
+
+    coords_points = np.stack([np.zeros(5,dtype=int),(np.random.random(5)*4095).astype(int),(np.random.random(5)*4095).astype(int)], axis=1)
+
+    points_helio = wcs_helio.wcs_pix2world(coords_points, 0)
+    points_celestial = wcs_celestial.wcs_pix2world(coords_points, 0)
+
+    for i in np.arange(5):
+        skycoord_helio = SkyCoord(points_helio[i, 1] * u.arcsec, points_helio[i, 2] * u.arcsec,
+                                  frame=frames.Helioprojective,
+                                  obstime=m['DATE-OBS'].value,
+                                  observer='earth')
+        skycoord_celestial = SkyCoord(points_celestial[i, 1] * u.deg, points_celestial[i, 2] * u.deg,
+                                      frame=GCRS,
+                                      obstime=m['DATE-OBS'].value,
+                                      observer='earth')
+
+        skycoord_celestial_transform = skycoord_helio.transform_to(GCRS)
+
+        # assert skycoord_celestial.separation(skycoord_helio) < 1 * u.deg
+        assert skycoord_celestial_transform.separation(skycoord_helio) < 1 * u.deg
+
+
+def test_wcs_corner_transformation():
+    m = NormalizedMetadata.load_template("CTM", "3")
+    m['DATE-OBS'] = datetime.utcnow().isoformat()
+    h = m.to_fits_header()
+    d = PUNCHData(np.ones((4096, 4096), dtype=np.float32), WCS(h), m)
+
+    # Update the WCS
+    updated_header = d.construct_wcs_header_fields()[:-3]
+
+    header_helio = astropy.io.fits.Header()
+    header_celestial = astropy.io.fits.Header()
+
+    for key in updated_header.keys():
+        if key[-1] == 'A':
+            header_celestial[key[:-1]] = updated_header[key]
+        else:
+            header_helio[key] = updated_header[key]
+
+    wcs_helio = WCS(header_helio)
+    wcs_celestial = WCS(header_celestial)
+
+    # Grab the four corner pixel coordinates from each frame
+    coordinates_corners = np.array([[0,0,0], [0,0,4095], [0,4095,0], [0,4095, 4095], [0,2048.5, 2048.5]])
+    corners_helio = wcs_helio.wcs_pix2world(coordinates_corners, 0)
+    corners_celestial = wcs_celestial.wcs_pix2world(coordinates_corners, 0)
+
+    for i in np.arange(5):
+        skycoord_helio = SkyCoord(corners_helio[i,1]*u.arcsec, corners_helio[i,2]*u.arcsec,
+                                  frame=frames.Helioprojective,
+                                  obstime=m['DATE-OBS'].value,
+                                  observer='earth')
+        skycoord_celestial = SkyCoord(corners_celestial[i,1]*u.deg, corners_celestial[i,2]*u.deg,
+                                      frame=GCRS,
+                                      obstime=m['DATE-OBS'].value,
+                                      observer='earth')
+
+        skycoord_celestial_transform = skycoord_helio.transform_to(GCRS)
+
+        # assert skycoord_celestial.separation(skycoord_helio) < 1 * u.deg
+        assert skycoord_celestial_transform.separation(skycoord_helio) < 1 * u.deg
+
+
+def test_pc_matrix_rotation():
+    test_dateobs = '2012-01-01T04:09:21.022'
+    p_angle = sun.P(time=test_dateobs)
+
+    test_pc_helio = np.array([[0.998861070000, -0.0477132420000],[0.0477132420000, 0.998861070000]])
+    test_pc_celestial = np.array([[0.997301460000, 0.0734153460000],[-0.0734153460000, 0.997301460000]])
+
+    rotation_matrix = np.array([[np.cos(p_angle), -1 * np.sin(p_angle)], [np.sin(p_angle), np.cos(p_angle)]])
+
+    test_rotation_matrix_computed = np.matmul(test_pc_helio, inv(test_pc_celestial))
+    test_rotation_angle_computed = (np.arcsin(test_rotation_matrix_computed[1,0])*u.rad).to(u.deg)
+
+    test_rotated = np.matmul(test_pc_helio, np.array([[np.cos(p_angle), -1*np.sin(p_angle)],[np.sin(p_angle), np.cos(p_angle)]]))
+
+
+def test_pc_matrix_rotation2():
+    test_dateobs = '2012-01-01T04:09:21.022'
+    p_angle = sun.P(time=test_dateobs)
+
+    test_pc_helio = np.array([[1, 0],[0, 1]])
+
+    rotation_matrix = np.array([[np.cos(p_angle), -1 * np.sin(p_angle)], [np.sin(p_angle), np.cos(p_angle)]])
+
+    test_pc_celestial = np.matmul(test_pc_helio, rotation_matrix)
 
 
 def test_axis_ordering():

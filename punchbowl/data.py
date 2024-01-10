@@ -10,7 +10,7 @@ from dateutil.parser import parse as parse_datetime
 from astropy.io import fits
 from astropy.nddata import StdDevUncertainty
 from astropy.wcs import WCS
-from astropy.coordinates import SkyCoord, ICRS
+from astropy.coordinates import SkyCoord, ICRS, GCRS
 from sunpy.coordinates import frames, sun
 from sunpy.map import solar_angular_radius
 from astropy.io.fits import Header
@@ -948,12 +948,13 @@ class PUNCHData(NDCube):
             output_header['CTYPE'+str(spatial_coord_1+1)+'A'] = 'RA-ARC'
             output_header['CTYPE'+str(spatial_coord_2+1)+'A'] = 'DEC-ARC'
 
-            center_helio_coord = SkyCoord(self.wcs.wcs.crval[spatial_coord_1]*u.arcsec,self.wcs.wcs.crval[spatial_coord_2]*u.arcsec,
-                                                   frame=frames.Helioprojective,
-                                                   obstime=self.meta['DATE-OBS'].value,
-                                                   observer='earth')
+            center_helio_coord = SkyCoord(self.wcs.wcs.crval[spatial_coord_1]*u.arcsec,
+                                          self.wcs.wcs.crval[spatial_coord_2]*u.arcsec,
+                                          frame=frames.Helioprojective,
+                                          obstime=self.meta['DATE-OBS'].value,
+                                          observer='earth')
 
-            center_celestial_coord = center_helio_coord.transform_to(ICRS)
+            center_celestial_coord = center_helio_coord.transform_to(GCRS)
 
             output_header['CRVAL'+str(spatial_coord_1+1)+'A'] = center_celestial_coord.ra.value
             output_header['CRVAL'+str(spatial_coord_2+1)+'A'] = center_celestial_coord.dec.value
