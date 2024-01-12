@@ -964,7 +964,7 @@ class PUNCHData(NDCube):
 
             rotation_matrix = np.array([[np.cos(p_angle), -1*np.sin(p_angle)],[np.sin(p_angle), np.cos(p_angle)]])
 
-            pc_celestial = np.matmul(self.wcs.wcs.pc[spatial_coord_1:,spatial_coord_1:], rotation_matrix)
+            pc_celestial = np.matmul(self.wcs.wcs.pc[spatial_coord_1:,spatial_coord_1:], rotation_matrix).astype('float16')
 
             output_header['PC'+str(spatial_coord_1+1)+'_'+str(spatial_coord_1+1)+'A'] = pc_celestial[0, 0]
             output_header['PC'+str(spatial_coord_1+1)+'_'+str(spatial_coord_2+1)+'A'] = pc_celestial[0, 1]
