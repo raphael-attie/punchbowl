@@ -9,8 +9,7 @@ from punchbowl.data import PUNCHData
 
 from ndcube import NDCollection
 
-from solpolpy import resolve
-from solpolpy.polarizers import mzp_to_bpb
+import solpolpy
 
 
 def define_amatrix(arrayshape) -> np.ndarray:
@@ -70,34 +69,34 @@ def resolve_polarization(data_list: List[PUNCHData]) -> List[PUNCHData]:
 
     """
 
-    # # Unpack input data - originally in MZP w/r/t camera coordinates
-    # data_mzp_camera = np.zeros([*data_list[0].data.shape, 3, 1])
-    # for i, data in enumerate(data_list):
-    #     data_mzp_camera[:, :, i, 0] = data.data
-    #
-    # # Generate the required A-matrix (MZP' (camera coords) = A x MZP (solar coords))
-    # # This folds in the IMAX effect
-    # mat_a = define_amatrix(data_list[0].data.shape)
-    #
-    # # Invert a-matrix
-    # mat_a_inv = np.linalg.inv(mat_a)
-    #
-    # # Transform polarization from camera coordinates to solar coordinates
-    # data_mzp_solar = np.matmul(mat_a_inv, data_mzp_camera)
-    #
-    # # Repackage data
-    # # TODO - update WCS as well, or make new data objects?
-    # for i, data in enumerate(data_list):
-    #     data.duplicate_with_updates(data=data_mzp_solar[:, :, i, 0])
+    # Unpack input data - originally in MZP w/r/t camera coordinates
+    data_mzp_camera = np.zeros([*data_list[0].data.shape, 3, 1])
+    for i, data in enumerate(data_list):
+        data_mzp_camera[:, :, i, 0] = data.data
 
-    # TODO - Rather than all this above... might want to just repackage data and pass to and from solpolpy?
+    # Generate the required A-matrix (MZP' (camera coords) = A x MZP (solar coords))
+    # This folds in the IMAX effect
+    mat_a = define_amatrix(data_list[0].data.shape)
+
+    # Invert a-matrix
+    mat_a_inv = np.linalg.inv(mat_a)
+
+    # Transform polarization from camera coordinates to solar coordinates
+    data_mzp_solar = np.matmul(mat_a_inv, data_mzp_camera)
+
+    # Repackage data
+    # TODO - update WCS as well, or make new data objects?
+    for i, data in enumerate(data_list):
+        data.duplicate_with_updates(data=data_mzp_solar[:, :, i, 0])
 
     # Unpack data into a NDCollection object
     data_dictionary = dict((key, data) for key, data in zip(['Bm', 'Bz', 'Bp'], data_list))
     data_collection = NDCollection(data_dictionary)
 
     # Resolve polarization (test parameters for now)
-    resolved_data_collection = resolve(data_collection, 'MZP')
+    # TODO - Utilize solpolpy to convert from camera MZP to solar MZP
+    # This will require spacecraft rotation information
+    resolved_data_collection = solpolpy.resolve(data_collection, 'MZP')
 
     # Repack data
     # Create new data objects for each resolved polarization?
