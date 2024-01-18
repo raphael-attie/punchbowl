@@ -554,7 +554,9 @@ def test_wcs_point_transformation():
     wcs_celestial = WCS(header_celestial)
 
     npoints = 20
-    coords_points = np.stack([np.zeros(npoints,dtype=int),(np.random.random(npoints)*4095).astype(int),(np.random.random(npoints)*4095).astype(int)], axis=1)
+    coords_points = np.stack([np.zeros(npoints,dtype=int),
+                              (np.random.random(npoints)*4095).astype(int),
+                              (np.random.random(npoints)*4095).astype(int)], axis=1)
 
     points_helio = wcs_helio.all_pix2world(coords_points, 0)
     points_celestial = wcs_celestial.all_pix2world(coords_points, 0)
@@ -581,7 +583,7 @@ def test_wcs_point_transformation():
             skycoord_celestial_transform = skycoord_helio.transform_to(GCRS)
 
         with frames.Helioprojective.assume_spherical_screen(SkyCoord(center_skycoord_helio.observer)):
-            # assert skycoord_celestial.separation(skycoord_helio) < 1 * u.arcsec
+            assert skycoord_celestial.separation(skycoord_helio) < 25 * u.deg
             assert skycoord_celestial_transform.separation(skycoord_helio) < 1 * u.arcsec
 
 
@@ -599,7 +601,7 @@ def test_pc_matrix_rotation():
 
     pc_celestial_computed = np.matmul(pc_helio, rotation_matrix)
 
-    assert abs(p_angle_computed - p_angle) < 5*u.deg
+    assert abs(p_angle_computed - p_angle) < 5 * u.deg
 
 
 def test_axis_ordering():

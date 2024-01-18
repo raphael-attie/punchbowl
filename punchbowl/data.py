@@ -947,6 +947,7 @@ class PUNCHData(NDCube):
                 output_header[key + 'A'] = value
             output_header['CTYPE'+str(spatial_coord_1+1)+'A'] = 'RA-ARC'
             output_header['CTYPE'+str(spatial_coord_2+1)+'A'] = 'DEC-ARC'
+            output_header['CDELT'+str(spatial_coord_1+1)+'A'] = -1 * output_header['CDELT'+str(spatial_coord_1+1)+'A']
 
             center_helio_coord = SkyCoord(self.wcs.wcs.crval[spatial_coord_1]*u.deg,
                                           self.wcs.wcs.crval[spatial_coord_2]*u.deg,

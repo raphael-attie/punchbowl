@@ -90,7 +90,7 @@ SECTION,TYPE,KEYWORD,VALUE,COMMENT,DATATYPE,NULLABLE,MUTABLE,DEFAULT
 5,keyword,PC3_2A,0.0,Coordinate transformation matrix element,float,TRUE,TRUE,
 5,keyword,PC3_3A,1.0,Coordinate transformation matrix element,float,TRUE,TRUE,
 5,keyword,CDELT1A,0.0225,[deg] Coordinate increment at reference point,float,TRUE,TRUE,
-5,keyword,CDELT2A,0.0225,[deg] Coordinate increment at reference point,float,TRUE,TRUE,
+5,keyword,CDELT2A,-0.0225,[deg] Coordinate increment at reference point,float,TRUE,TRUE,
 5,keyword,CDELT3A,0.0225,[deg] Coordinate increment at reference point,float,TRUE,TRUE,
 5,keyword,CUNIT1A,deg,Units of coordinate increment and value,str,TRUE,TRUE,
 5,keyword,CUNIT2A,deg,Units of coordinate increment and value,str,TRUE,TRUE,
