@@ -8,11 +8,12 @@ from astropy.wcs import WCS
 from astropy.nddata import StdDevUncertainty
 
 from punchbowl.data import PUNCHData, NormalizedMetadata
+from punchbowl.level1.quartic_fit import create_constant_quartic_coefficients
 
 
 def create_f_corona_test_data(path="../punchbowl/level3/tests/data/"):
     meta = NormalizedMetadata.load_template("CFM", "3")
-    meta['DATE-OBS'] = str(datetime.now())
+    meta["DATE-OBS"] = str(datetime.now())
     wcs = WCS(naxis=2)
     for i in range(10):
         data = np.ones((10, 10)) * i
@@ -23,7 +24,7 @@ def create_f_corona_test_data(path="../punchbowl/level3/tests/data/"):
 
 def create_punchdata_test_data(path="../punchbowl/tests/"):
     meta = NormalizedMetadata.load_template("CFM", "3")
-    meta['DATE-OBS'] = str(datetime.now())
+    meta["DATE-OBS"] = str(datetime.now())
     wcs = WCS(naxis=2)
     data = np.ones((10, 10))
     obj = PUNCHData(data, wcs, meta)
@@ -46,9 +47,19 @@ def create_header_validation_test_data(path="../punchbowl/tests/"):
     d = PUNCHData(data=data, uncertainty=uncertainty, wcs=WCS(h), meta=m)
     file_path = os.path.join(path, "test_header_validation.fits")
     d.write(file_path, overwrite=True)
+    
+def create_quartic_coefficients_test_data(path="../punchbowl/level1/tests/data/"):
+    meta = NormalizedMetadata.load_template("CF1", "1")
+    meta['DATE-OBS'] = str(datetime.now())
+    wcs = WCS(naxis=3)
+    data = create_constant_quartic_coefficients((10, 10))
+    obj = PUNCHData(data, wcs, meta)
+    file_path = os.path.join(path, "test_quartic_coeffs.fits")
+    obj.write(file_path, overwrite=True)
 
 
 if __name__ == "__main__":
     create_header_validation_test_data()
     create_f_corona_test_data()
     create_punchdata_test_data()
+    create_quartic_coefficients_test_data()
