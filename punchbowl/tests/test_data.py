@@ -3,20 +3,19 @@ from datetime import datetime
 from collections import OrderedDict
 
 import astropy
+import astropy.units as u
 import numpy as np
-from numpy.linalg import inv
 import pandas as pd
 import pytest
+from astropy.coordinates import GCRS, ICRS, SkyCoord
 from astropy.io import fits
 from astropy.nddata import StdDevUncertainty
-from astropy.wcs import WCS
-from astropy.coordinates import SkyCoord, ICRS, GCRS
 from astropy.time import Time
-from sunpy.coordinates import frames, sun
-import astropy.units as u
-from pytest import fixture
+from astropy.wcs import WCS
 from ndcube import NDCube
+from numpy.linalg import inv
 from pytest import fixture
+from sunpy.coordinates import frames, sun
 
 from punchbowl.data import (
     History,
@@ -155,6 +154,14 @@ def test_normalizedmetadata_to_fits_header(tmpdir):
     assert isinstance(header, fits.Header)
 
 
+def test_normalizedmetadata_get_keys():
+    result = NormalizedMetadata.load_template("CB1",
+                                              omniheader_path=SAMPLE_OMNIBUS_PATH,
+                                              level_spec_path=SAMPLE_LEVEL_PATH,
+                                              spacecraft_def_path=SAMPLE_SPACECRAFT_DEF_PATH)
+    keys = result.fits_keys
+    assert len(keys) == 5
+
 @fixture
 def sample_wcs() -> WCS:
     """
@@ -271,9 +278,24 @@ def test_generate_data_statistics_from_zeros(sample_punchdata):
 
     sample_data = PUNCHData(data=np.zeros((2048,2048),dtype=np.int16), wcs=WCS(h), meta=m)
 
-    with pytest.raises(InvalidDataError):
-        sample_data._update_statistics()
+    sample_data._update_statistics()
 
+    assert sample_data.meta['DATAZER'].value == 2048*2048
+
+    assert sample_data.meta['DATASAT'].value == 0
+
+    assert sample_data.meta['DATAAVG'].value == -999.0
+    assert sample_data.meta['DATAMDN'].value == -999.0
+    assert sample_data.meta['DATASIG'].value == -999.0
+
+    percentile_percentages = [1, 10, 25, 50, 75, 90, 95, 98, 99]
+    percentile_values = [-999.0 for _ in percentile_percentages]
+
+    for percent, value in zip(percentile_percentages, percentile_values):
+        assert sample_data.meta[f'DATAP{percent:02d}'].value == value
+
+    assert sample_data.meta['DATAMIN'].value == 0.0
+    assert sample_data.meta['DATAMAX'].value == 0.0
 
 def test_generate_data_statistics(sample_punchdata):
     sample_data = sample_punchdata()

@@ -6,28 +6,23 @@ from datetime import datetime
 from collections import OrderedDict, namedtuple
 from collections.abc import Mapping
 
-from astropy.io import fits
-from astropy.nddata import StdDevUncertainty
-from astropy.wcs import WCS
-from astropy.coordinates import SkyCoord, ICRS, GCRS
-from sunpy.coordinates import frames, sun
-from sunpy.map import solar_angular_radius
-from astropy.io.fits import Header
 import astropy.units as u
 import astropy.wcs.wcsapi
 import matplotlib as mpl
 import numpy as np
 import pandas as pd
 import yaml
+from astropy.coordinates import GCRS, SkyCoord
 from astropy.io import fits
 from astropy.io.fits import Header
 from astropy.nddata import StdDevUncertainty
 from astropy.wcs import WCS
 from dateutil.parser import parse as parse_datetime
 from ndcube import NDCube
+from sunpy.coordinates import frames, sun
+from sunpy.map import solar_angular_radius
 
 from punchbowl.errors import MissingMetadataError
-from punchbowl.exceptions import InvalidDataError
 
 _ROOT = os.path.abspath(os.path.dirname(__file__))
 
@@ -618,8 +613,17 @@ class NormalizedMetadata(Mapping):
 
     @property
     def sections(self) -> t.List[str]:
-        """returns header keys"""
+        """returns header sections"""
         return list(self._contents.keys())
+
+    @property
+    def fits_keys(self) -> t.List[str]:
+        """returns fits keys in header template"""
+
+        def flatten(xss):
+            return [x for xs in xss for x in xs]
+
+        return flatten([list(self._contents[section_name].keys()) for section_name in self._contents.keys()])
 
     @property
     def history(self) -> History:
@@ -648,7 +652,7 @@ class NormalizedMetadata(Mapping):
         if not isinstance(key, str):
             raise TypeError(f"Keys for NormalizedMetadata must be strings. You provided {type(key)}.")
         if len(key) > 8:
-            raise ValueError("Keys must be <= 8 characters long")
+            raise ValueError(f"Keys must be <= 8 characters long, received {key}")
 
     def __setitem__(self, key: str, value: t.Any) -> None:
         """
@@ -1064,8 +1068,8 @@ class PUNCHData(NDCube):
 
         # TODO - Determine DSATVAL omniheader value in calibrated units for L1+
 
-        if not np.any(self.data) or np.all(np.isnan(self.data)) or np.all(np.isinf(self.data)):
-            raise InvalidDataError("Input data array expected to contain real, non-zero data.")
+        # if not np.any(self.data) or np.all(np.isnan(self.data)) or np.all(np.isinf(self.data)):
+        #     raise InvalidDataError("Input data array expected to contain real, non-zero data.")
 
         self.meta["DATAZER"] = len(np.where(self.data == 0)[0])
 
@@ -1073,18 +1077,25 @@ class PUNCHData(NDCube):
 
         nonzero_data = self.data[np.where(self.data != 0)].flatten()
 
-        self.meta["DATAAVG"] = np.mean(nonzero_data).item()
-        self.meta["DATAMDN"] = np.median(nonzero_data).item()
-        self.meta["DATASIG"] = np.std(nonzero_data).item()
+        if len(nonzero_data) > 0:
+            self.meta["DATAAVG"] = np.nanmean(nonzero_data).item()
+            self.meta["DATAMDN"] = np.nanmedian(nonzero_data).item()
+            self.meta["DATASIG"] = np.nanstd(nonzero_data).item()
+        else:
+            self.meta['DATAAVG'] = -999.0
+            self.meta['DATAMDN'] = -999.0
+            self.meta['DATASIG'] = -999.0
 
         percentile_percentages = [1, 10, 25, 50, 75, 90, 95, 98, 99]
-        percentile_values = np.percentile(nonzero_data, percentile_percentages)
+        percentile_values = np.nanpercentile(nonzero_data, percentile_percentages)
+        if np.any(np.isnan(percentile_values)):  # report nan if any of the values are nan
+            percentile_values = [-999.0 for _ in percentile_percentages]
 
         for percent, value in zip(percentile_percentages, percentile_values):
             self.meta[f"DATAP{percent:02d}"] = value
 
-        self.meta["DATAMIN"] = float(self.data.min().item())
-        self.meta["DATAMAX"] = float(self.data.max().item())
+        self.meta["DATAMIN"] = float(np.nanmin(self.data))
+        self.meta["DATAMAX"] = float(np.nanmax(self.data))
 
     def duplicate_with_updates(self,
                                data: t.Optional[np.ndarray] = None,
