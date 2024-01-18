@@ -3,11 +3,10 @@ import os
 from datetime import datetime, timedelta
 
 import numpy as np
+from astropy.nddata import StdDevUncertainty
 from astropy.wcs import WCS
 
-from astropy.nddata import StdDevUncertainty
-
-from punchbowl.data import PUNCHData, NormalizedMetadata
+from punchbowl.data import NormalizedMetadata, PUNCHData
 from punchbowl.level1.quartic_fit import create_constant_quartic_coefficients
 
 
@@ -47,7 +46,8 @@ def create_header_validation_test_data(path="../punchbowl/tests/"):
     d = PUNCHData(data=data, uncertainty=uncertainty, wcs=WCS(h), meta=m)
     file_path = os.path.join(path, "test_header_validation.fits")
     d.write(file_path, overwrite=True)
-    
+
+
 def create_quartic_coefficients_test_data(path="../punchbowl/level1/tests/data/"):
     meta = NormalizedMetadata.load_template("CF1", "1")
     meta['DATE-OBS'] = str(datetime.now())
