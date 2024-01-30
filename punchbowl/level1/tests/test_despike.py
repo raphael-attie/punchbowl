@@ -21,7 +21,10 @@ def test_create_radial_array():
 
 
 def test_spikejones_with_one_spike():
-    image = np.ones((100, 100))
-    image[50, 50] = 10
+    image = np.zeros((100, 100)) + 0.1
+    image[50, 50] = 100
+    image[49, 50] = 10
+
+    image[30, 70] = 5
     output = spikejones(image)
     assert output.shape == image.shape

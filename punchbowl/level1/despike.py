@@ -28,23 +28,38 @@ def spikejones(image: np.ndarray,
     kernel_size = unsharp_size * 2 + 1
     smoothing_size = kernel_size * 2 + 1
     smoothing_kernel = radial_array((smoothing_size, smoothing_size)) <= (smoothing_size / 2)
-
+    smoothing_kernel = smoothing_kernel / np.sum(smoothing_kernel)
     if method == "median":
         normalized_image = image / medfilt2d(image, kernel_size=smoothing_size)
         # unsharp_kernel = radial_array((kernel_size, kernel_size)) <= (kernel_size / 2)
         unsharped_image = normalized_image - medfilt2d(normalized_image, kernel_size=kernel_size) > alpha
     elif method == "convolve":
-        normalized_image = convolve2d(image, smoothing_kernel / np.sum(smoothing_kernel))[2*smoothing_size+1:-(2*smoothing_size+1)]
-        unsharp_kernel = np.ones((kernel_size, kernel_size)) / kernel_size / kernel_size
+
+        normalized_image = image / convolve2d(image, smoothing_kernel, mode='same')#[2*smoothing_size+1:-(2*smoothing_size+1)]
+        import matplotlib.pyplot as plt
+        im = plt.imshow(normalized_image)
+        plt.colorbar(im)
+        plt.show()
+
+        unsharp_kernel = -np.ones((kernel_size, kernel_size)) / kernel_size / kernel_size
         unsharp_kernel[kernel_size//2, kernel_size//2] += 0.75
-        unsharp_kernel[kernel_size//2 - 1: kernel_size//2 +1, kernel_size//2 - 1: kernel_size//2 + 2] += 0.25 / 9
+        unsharp_kernel[kernel_size//2 - 1: kernel_size//2 + 1, kernel_size//2 - 1: kernel_size//2 + 1] += 0.25 / 9
         unsharped_image = convolve2d(normalized_image, unsharp_kernel, mode='same') > alpha
     else:
         raise NotImplementedError(f"Unsupported method. Method must be 'median' or 'convolve' but received {method}")
 
+    import matplotlib.pyplot as plt
+    plt.imshow(unsharped_image)
+    plt.show()
+
     if dilation != 0:
         dilation_size = 2 * dilation + 1
         unsharped_image = convolve2d(unsharped_image, np.ones(dilation_size, dilation_size), mode='same') != 0
+
+    import matplotlib.pyplot as plt
+    plt.imshow(unsharped_image)
+    plt.show()
+
 
     spikes = np.where(unsharped_image != 0)
     output = np.copy(image)
