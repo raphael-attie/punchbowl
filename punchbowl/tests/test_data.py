@@ -656,4 +656,3 @@ def test_has_typecode():
     meta = NormalizedMetadata.load_template("CFM", "3")
     meta["DATE-OBS"] = str(datetime.now())
     assert "TYPECODE" in meta
-    PUNCHData(np.zeros((2048, 2048)), WCS(naxis=2), meta).write("~/Desktop/hmm.fits", skip_wcs_conversion=True)
