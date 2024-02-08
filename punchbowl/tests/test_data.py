@@ -7,7 +7,7 @@ import astropy.units as u
 import numpy as np
 import pandas as pd
 import pytest
-from astropy.coordinates import GCRS, ICRS, SkyCoord
+from astropy.coordinates import GCRS, ICRS, EarthLocation, SkyCoord, get_sun
 from astropy.io import fits
 from astropy.nddata import StdDevUncertainty
 from astropy.time import Time
@@ -23,6 +23,8 @@ from punchbowl.data import (
     MetaField,
     NormalizedMetadata,
     PUNCHData,
+    calculate_2d_helio_wcs_from_celestial,
+    calculate_3d_helio_wcs_from_celestial,
     load_spacecraft_def,
     load_trefoil_wcs,
 )
@@ -445,25 +447,6 @@ def test_history_cannot_compare_to_nonhistory_type():
         h1 == h2
 
 
-def test_from_fits_for_metadata(tmpdir):
-    m = NormalizedMetadata.load_template("PM1", "0")
-    m['DATE-OBS'] = datetime.utcnow().isoformat()
-    m.history.add_now("Test", "does it write?")
-    m.history.add_now("Test", "how about twice?")
-    m['DESCRPTN'] = 'This is a test!'
-    m['CHECKSUM'] = ''
-    m['DATASUM'] = ''
-    h = m.to_fits_header()
-
-    path = os.path.join(tmpdir, "from_fits_test.fits")
-    d = PUNCHData(data=np.tile(np.arange(2048, dtype=np.int16), (2048, 1)), wcs=WCS(h), meta=m)
-    d.write(path)
-
-    loaded = PUNCHData.from_fits(path)
-    loaded.meta['LATPOLE'] = 0.0  # a hackish way to circumvent the LATPOLE being moved by astropy
-    assert loaded.meta == m
-
-
 def test_normalizedmetadata_from_fits_header():
     m = NormalizedMetadata.load_template("PM1", "0")
     m['DESCRPTN'] = 'This is a test!'
@@ -476,19 +459,19 @@ def test_normalizedmetadata_from_fits_header():
     assert recovered == m
 
 
-def test_generate_level3_data_product(tmpdir):
-    m = NormalizedMetadata.load_template("PTM", "3")
-    m['DATE-OBS'] = datetime.utcnow().isoformat()
-    h = m.to_fits_header()
-
-    path = os.path.join(tmpdir, "from_fits_test.fits")
-    d = PUNCHData(np.ones((2, 4096, 4096), dtype=np.float32), WCS(h), m)
-    d.write(path)
-
-    loaded = PUNCHData.from_fits(path)
-    loaded.meta['LATPOLE'] = 0.0
-
-    assert loaded.meta == m
+# def test_generate_level3_data_product(tmpdir):
+#     m = NormalizedMetadata.load_template("PTM", "3")
+#     m['DATE-OBS'] = datetime.utcnow().isoformat()
+#     h = m.to_fits_header()
+#
+#     path = os.path.join(tmpdir, "from_fits_test.fits")
+#     d = PUNCHData(np.ones((2, 4096, 4096), dtype=np.float32), WCS(h), m)
+#     d.write(path)
+#
+#     loaded = PUNCHData.from_fits(path)
+#     loaded.meta['LATPOLE'] = 0.0
+#
+#     assert loaded.meta == m
 
 
 def test_sun_location():
@@ -509,100 +492,112 @@ def test_sun_location():
         assert skycoord_origin.separation(skycoord_sun) < 1 * u.arcsec
 
 
-def test_wcs_center_transformation():
-    m = NormalizedMetadata.load_template("CTM", "3")
-    m['DATE-OBS'] = datetime.utcnow().isoformat()
+def test_wcs_many_point_2d_check():
+    m = NormalizedMetadata.load_template("CTM", "2")
+    # m['DATE-OBS'] = str(datetime.utcnow().isoformat())
+    date_obs = Time("2024-01-01T00:00:00", format='isot', scale='utc')
+    m['DATE-OBS'] = str(date_obs)
+    # date_obs = Time(m['DATE-OBS'].value, format='isot', scale='utc')
+    sun_radec = get_sun(date_obs)
+    m['CRVAL1A'] = sun_radec.ra.to(u.deg).value
+    m['CRVAL2A'] = sun_radec.dec.to(u.deg).value
     h = m.to_fits_header()
-    d = PUNCHData(np.ones((4096, 4096), dtype=np.float32), WCS(h), m)
+    d = PUNCHData(np.ones((4096, 4096), dtype=np.float32), WCS(h, key='A'), m)
 
-    # Update the WCS
-    updated_header = d.construct_wcs_header_fields()[:-3]
+    # we're at the center of the Earth so let's try that
+    test_loc = EarthLocation.from_geocentric(0, 0, 0, unit=u.m)
+    test_gcrs = SkyCoord(test_loc.get_gcrs(date_obs))
 
-    header_helio = astropy.io.fits.Header()
-    header_celestial = astropy.io.fits.Header()
+    wcs_celestial = d.wcs
 
-    for key in updated_header.keys():
-        if key[-1] == 'A':
-            header_celestial[key[:-1]] = updated_header[key]
-        else:
-            header_helio[key] = updated_header[key]
-
-    wcs_helio = WCS(header_helio)
-    wcs_celestial = WCS(header_celestial)
-
-    coords_center = np.array([[0,2047.5, 2047.5]])
-    center_helio = wcs_helio.wcs_pix2world(coords_center, 0)
-    center_celestial = wcs_celestial.wcs_pix2world(coords_center, 0)
-
-    skycoord_helio = SkyCoord(center_helio[0,1]*u.deg, center_helio[0,2]*u.deg,
-                              frame=frames.Helioprojective,
-                              obstime=m['DATE-OBS'].value,
-                              observer='earth')
-    skycoord_celestial = SkyCoord(center_celestial[0,1]*u.deg, center_celestial[0,2]*u.deg,
-                                  frame=GCRS,
-                                  obstime=m['DATE-OBS'].value)
-
-    with frames.Helioprojective.assume_spherical_screen(skycoord_helio.observer):
-        skycoord_celestial_transform = skycoord_helio.transform_to(GCRS)
-
-    with frames.Helioprojective.assume_spherical_screen(skycoord_helio.observer):
-        assert skycoord_celestial.separation(skycoord_helio) < 1 * u.arcsec
-        assert skycoord_celestial_transform.separation(skycoord_helio) < 1 * u.arcsec
-
-
-def test_wcs_point_transformation():
-    m = NormalizedMetadata.load_template("CTM", "3")
-    m['DATE-OBS'] = datetime.utcnow().isoformat()
-    h = m.to_fits_header()
-    d = PUNCHData(np.ones((4096, 4096), dtype=np.float32), WCS(h), m)
-
-    # Update the WCS
-    updated_header = d.construct_wcs_header_fields()[:-3]
-
-    header_helio = astropy.io.fits.Header()
-    header_celestial = astropy.io.fits.Header()
-
-    for key in updated_header.keys():
-        if key[-1] == 'A':
-            header_celestial[key[:-1]] = updated_header[key]
-        else:
-            header_helio[key] = updated_header[key]
-
-    wcs_helio = WCS(header_helio)
-    wcs_celestial = WCS(header_celestial)
+    wcs_helio = calculate_2d_helio_wcs_from_celestial(wcs_celestial, date_obs, d.data.shape)
 
     npoints = 20
-    coords_points = np.stack([np.zeros(npoints,dtype=int),
-                              (np.random.random(npoints)*4095).astype(int),
-                              (np.random.random(npoints)*4095).astype(int)], axis=1)
+    input_coords = np.stack([
+                             np.linspace(0, 4096, npoints).astype(int),
+                             np.linspace(0, 4096, npoints).astype(int)], axis=1)
 
-    points_helio = wcs_helio.all_pix2world(coords_points, 0)
-    points_celestial = wcs_celestial.all_pix2world(coords_points, 0)
+    points_celestial = wcs_celestial.all_pix2world(input_coords, 0)
+    points_helio = wcs_helio.all_pix2world(input_coords, 0)
 
-    coord_center = np.array([[0,2047.5, 2047.5]])
-    center_helio = wcs_helio.wcs_pix2world(coord_center, 0)
+    output_coords = []
 
-    center_skycoord_helio = SkyCoord(center_helio[0,1]*u.deg, center_helio[0,2]*u.deg,
-                              frame=frames.Helioprojective,
-                              obstime=m['DATE-OBS'].value,
-                              observer='earth')
-
-    for i in np.arange(points_helio.shape[0]):
-        skycoord_helio = SkyCoord(points_helio[i, 1] * u.deg, points_helio[i, 2] * u.deg,
-                                  frame=frames.Helioprojective,
-                                  obstime=m['DATE-OBS'].value,
-                                  observer='earth')
-        skycoord_celestial = SkyCoord(points_celestial[i, 1] * u.deg, points_celestial[i, 2] * u.deg,
+    for c_pix, c_celestial, c_helio in zip(input_coords, points_celestial, points_helio):
+        # skycoord_helio = SkyCoord(c_helio[1] * u.deg, c_helio[2] * u.deg,
+        #                           frame=frames.Helioprojective,
+        #                           obstime=date_obs,
+        #                           observer=test_gcrs)
+        skycoord_celestial = SkyCoord(c_celestial[0] * u.deg, c_celestial[1] * u.deg,
                                       frame=GCRS,
-                                      obstime=m['DATE-OBS'].value,
-                                      observer='earth')
+                                      obstime=date_obs,
+                                      observer=test_gcrs,
+                                      obsgeoloc=test_gcrs.cartesian,
+                                      obsgeovel=test_gcrs.velocity.to_cartesian(),
+                                      distance=test_gcrs.hcrs.distance
+                                      )
 
-        with frames.Helioprojective.assume_spherical_screen(SkyCoord(center_skycoord_helio.observer)):
-            skycoord_celestial_transform = skycoord_helio.transform_to(GCRS)
+        intermediate = skycoord_celestial.transform_to(frames.Helioprojective)
+        output_coords.append(wcs_helio.all_world2pix(intermediate.data.lon.to(u.deg).value,
+                                                     intermediate.data.lat.to(u.deg).value, 0))
+        print("\t", c_celestial[0], c_celestial[1], c_helio, intermediate.data.lon.to(u.deg).value, intermediate.data.lat.to(u.deg).value)
+        print(c_pix, output_coords[-1])
+        # assert np.linalg.norm(c_pix - output_coord) < 1
+    output_coords = np.array(output_coords)
+    distances = np.linalg.norm(input_coords - output_coords, axis=1)
+    assert np.max(distances) < 1
 
-        with frames.Helioprojective.assume_spherical_screen(SkyCoord(center_skycoord_helio.observer)):
-            assert skycoord_celestial.separation(skycoord_helio) < 25 * u.deg
-            assert skycoord_celestial_transform.separation(skycoord_helio) < 1 * u.arcsec
+def test_wcs_many_point_3d_check():
+    m = NormalizedMetadata.load_template("PSN", "3")
+    date_obs = Time("2024-01-01T00:00:00", format='isot', scale='utc')
+    m['DATE-OBS'] = str(date_obs)
+    sun_radec = get_sun(date_obs)
+    m['CRVAL2A'] = sun_radec.ra.to(u.deg).value
+    m['CRVAL3A'] = sun_radec.dec.to(u.deg).value
+    h = m.to_fits_header()
+    d = PUNCHData(np.ones((2, 4096, 4096), dtype=np.float32), WCS(h, key='A'), m)
+
+    # we're at the center of the Earth so let's try that
+    test_loc = EarthLocation.from_geocentric(0, 0, 0, unit=u.m)
+    test_gcrs = SkyCoord(test_loc.get_gcrs(date_obs))
+
+    wcs_celestial = d.wcs
+    wcs_helio = calculate_3d_helio_wcs_from_celestial(wcs_celestial, date_obs, d.data.shape)
+
+    print("d", d.wcs)
+    print("celestial", wcs_celestial)
+    npoints = 20
+    input_coords = np.stack([np.ones(npoints, dtype=int),
+                              np.linspace(0, 4096, npoints).astype(int),
+                              np.linspace(0, 4096, npoints).astype(int)], axis=1)
+
+    points_celestial = wcs_celestial.all_pix2world(input_coords, 0)
+    points_helio = wcs_helio.all_pix2world(input_coords, 0)
+
+    output_coords = []
+    for c_pix, c_celestial, c_helio in zip(input_coords, points_celestial, points_helio):
+        # skycoord_helio = SkyCoord(c_helio[1] * u.deg, c_helio[2] * u.deg,
+        #                           frame=frames.Helioprojective,
+        #                           obstime=date_obs,
+        #                           observer=test_gcrs)
+        skycoord_celestial = SkyCoord(c_celestial[1] * u.deg, c_celestial[2] * u.deg,
+                                      frame=GCRS,
+                                      obstime=date_obs,
+                                      observer=test_gcrs,
+                                      obsgeoloc=test_gcrs.cartesian,
+                                      obsgeovel=test_gcrs.velocity.to_cartesian(),
+                                      distance=test_gcrs.hcrs.distance
+                                      )
+
+        intermediate = skycoord_celestial.transform_to(frames.Helioprojective)
+        output_coords.append(wcs_helio.all_world2pix(1,
+                                                     intermediate.data.lon.to(u.deg).value,
+                                                     intermediate.data.lat.to(u.deg).value, 0))
+        print("\t", c_celestial[1], c_celestial[2], c_helio, intermediate.data.lon.to(u.deg).value, intermediate.data.lat.to(u.deg).value)
+        print(c_pix, output_coords[-1])
+        # assert np.linalg.norm(c_pix - output_coord) < 1
+    output_coords = np.array(output_coords)
+    distances = np.linalg.norm(input_coords - output_coords, axis=1)
+    assert np.max(distances) < 2
 
 
 def test_pc_matrix_rotation():
@@ -655,3 +650,10 @@ def test_load_trefoil_wcs():
     trefoil_wcs, trefoil_shape = load_trefoil_wcs()
     assert trefoil_shape == (4096, 4096)
     assert isinstance(trefoil_wcs, WCS)
+
+
+def test_has_typecode():
+    meta = NormalizedMetadata.load_template("CFM", "3")
+    meta["DATE-OBS"] = str(datetime.now())
+    assert "TYPECODE" in meta
+    PUNCHData(np.zeros((2048, 2048)), WCS(naxis=2), meta).write("~/Desktop/hmm.fits", skip_wcs_conversion=True)

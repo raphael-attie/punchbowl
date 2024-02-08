@@ -11,15 +11,18 @@ import astropy.wcs.wcsapi
 import matplotlib as mpl
 import numpy as np
 import pandas as pd
+import sunpy.map
 import yaml
-from astropy.coordinates import GCRS, SkyCoord
+from astropy.coordinates import GCRS, EarthLocation, SkyCoord
 from astropy.io import fits
 from astropy.io.fits import Header
 from astropy.nddata import StdDevUncertainty
+from astropy.time import Time
 from astropy.wcs import WCS
 from dateutil.parser import parse as parse_datetime
 from ndcube import NDCube
 from sunpy.coordinates import frames, sun
+from sunpy.coordinates.sun import _sun_north_angle_to_z
 from sunpy.map import solar_angular_radius
 
 from punchbowl.errors import MissingMetadataError
@@ -62,6 +65,107 @@ def load_spacecraft_def(path: t.Optional[str] = None) -> dict[str, t.Any]:
         path = get_data_path("spacecraft.yaml")
     with open(path, "r") as f:
         return yaml.safe_load(f)
+
+
+def extract_crota_from_wcs(wcs, is_3d=False):
+    index = 1 if is_3d else 0
+    return np.arctan2(wcs.wcs.pc[index+1, index], wcs.wcs.pc[index, index]) * u.rad
+
+
+def p_angle_gcrs(date_obs):
+    geocentric = GCRS(obstime=date_obs)
+    p_angle = _sun_north_angle_to_z(geocentric)
+    return p_angle
+
+
+def calculate_2d_helio_wcs_from_celestial(wcs_celestial, date_obs, data_shape):
+    # we're at the center of the Earth
+    test_loc = EarthLocation.from_geocentric(0, 0, 0, unit=u.m)
+    test_gcrs = SkyCoord(test_loc.get_gcrs(date_obs))
+
+    # follow the SunPy tutorial from here
+    # https://docs.sunpy.org/en/stable/generated/gallery/units_and_coordinates/radec_to_hpc_map.html#sphx-glr-generated-gallery-units-and-coordinates-radec-to-hpc-map-py
+    reference_coord = SkyCoord(wcs_celestial.wcs.crval[0] * u.Unit(wcs_celestial.wcs.cunit[0]),
+                               wcs_celestial.wcs.crval[1] * u.Unit(wcs_celestial.wcs.cunit[1]),
+                               frame='gcrs',
+                               obstime=date_obs,
+                               obsgeoloc=test_gcrs.cartesian,
+                               obsgeovel=test_gcrs.velocity.to_cartesian(),
+                               distance=test_gcrs.hcrs.distance
+                               )
+
+    reference_coord_arcsec = reference_coord.transform_to(frames.Helioprojective(observer=test_gcrs))
+
+    cdelt1 = (np.abs(wcs_celestial.wcs.cdelt[0]) * u.deg).to(u.arcsec)
+    cdelt2 = (np.abs(wcs_celestial.wcs.cdelt[1]) * u.deg).to(u.arcsec)
+
+    # p_angle = p_angle_gcrs(date_obs)  # we use GCRS to be consistent in coordinate systems
+    geocentric = GCRS(obstime=date_obs)
+    p_angle = _sun_north_angle_to_z(geocentric)
+
+    crota = extract_crota_from_wcs(wcs_celestial, is_3d=False)
+
+    new_header = sunpy.map.make_fitswcs_header(data_shape, reference_coord_arcsec,
+                                               reference_pixel=u.Quantity([wcs_celestial.wcs.crpix[0] - 1,
+                                                                           wcs_celestial.wcs.crpix[1] - 1] * u.pixel),
+                                               scale=u.Quantity([cdelt1, cdelt2] * u.arcsec / u.pix),
+                                               rotation_angle=-p_angle-crota,
+                                               observatory='PUNCH',
+                                               projection_code='ARC')
+
+    wcs_helio = WCS(new_header)
+
+    return wcs_helio
+
+
+def calculate_3d_helio_wcs_from_celestial(wcs_celestial, date_obs, data_shape):
+    # we're at the center of the Earth
+    test_loc = EarthLocation.from_geocentric(0, 0, 0, unit=u.m)
+    test_gcrs = SkyCoord(test_loc.get_gcrs(date_obs))
+
+    # follow the SunPy tutorial from here
+    # https://docs.sunpy.org/en/stable/generated/gallery/units_and_coordinates/radec_to_hpc_map.html#sphx-glr-generated-gallery-units-and-coordinates-radec-to-hpc-map-py
+    reference_coord = SkyCoord(wcs_celestial.wcs.crval[1] * u.Unit(wcs_celestial.wcs.cunit[1]),
+                               wcs_celestial.wcs.crval[2] * u.Unit(wcs_celestial.wcs.cunit[2]),
+                               frame='gcrs',
+                               obstime=date_obs,
+                               obsgeoloc=test_gcrs.cartesian,
+                               obsgeovel=test_gcrs.velocity.to_cartesian(),
+                               distance=test_gcrs.hcrs.distance
+                               )
+
+    reference_coord_arcsec = reference_coord.transform_to(frames.Helioprojective(observer=test_gcrs))
+
+    cdelt2 = (np.abs(wcs_celestial.wcs.cdelt[1]) * u.deg).to(u.arcsec)
+    cdelt3 = (np.abs(wcs_celestial.wcs.cdelt[2]) * u.deg).to(u.arcsec)
+
+    # p_angle = p_angle_gcrs(date_obs)  # we use GCRS to be consistent in coordinate systems
+    geocentric = GCRS(obstime=date_obs)
+    p_angle = _sun_north_angle_to_z(geocentric)
+
+    crota = extract_crota_from_wcs(wcs_celestial, is_3d=True)
+
+    new_header = sunpy.map.make_fitswcs_header(data_shape[1:], reference_coord_arcsec,
+                                               reference_pixel=u.Quantity([wcs_celestial.wcs.crpix[1] - 1,
+                                                                           wcs_celestial.wcs.crpix[2] - 1] * u.pixel),
+                                               scale=u.Quantity([cdelt2, cdelt3] * u.arcsec / u.pix),
+                                               rotation_angle=-p_angle-crota,
+                                               projection_code='ARC',
+                                               observatory='PUNCH')
+    wcs_helio = WCS(new_header)
+
+    # new_pc = np.eye(3)
+    # new_pc[1:, 1:] = wcs_helio.wcs.pc.copy()
+
+    out_wcs = astropy.wcs.utils.add_stokes_axis_to_wcs(wcs_helio, 0)
+    # out_wcs = WCS(naxis=3)
+    # out_wcs.wcs.pc = new_pc
+    # out_wcs.wcs.crval = (wcs_celestial.wcs.crval[0], *wcs_helio.wcs.crval)
+    # out_wcs.wcs.crpix = (wcs_celestial.wcs.crpix[0], *wcs_helio.wcs.crpix)
+    # out_wcs.wcs.cdelt = (wcs_celestial.wcs.cdelt[0], *wcs_helio.wcs.cdelt)
+    # out_wcs.wcs.ctype = ("STOKES", *wcs_helio.wcs.ctype)
+
+    return out_wcs
 
 
 HistoryEntry = namedtuple("HistoryEntry", "datetime, source, comment")
@@ -889,7 +993,7 @@ class PUNCHData(NDCube):
             "PUNCH_L" + file_level + "_" + type_code + obscode + "_" + date_string
         )
 
-    def write(self, filename: str, overwrite: bool = True) -> None:
+    def write(self, filename: str, overwrite: bool = True, skip_wcs_conversion: bool=False) -> None:
         """Write PUNCHData elements to file
 
         Parameters
@@ -911,7 +1015,7 @@ class PUNCHData(NDCube):
         """
 
         if filename.endswith(".fits"):
-            self._write_fits(filename, overwrite=overwrite)
+            self._write_fits(filename, overwrite=overwrite, skip_wcs_conversion=skip_wcs_conversion)
         elif filename.endswith((".png", ".jpg", ".jpeg")):
             self._write_ql(filename, overwrite=overwrite)
         else:
@@ -928,63 +1032,54 @@ class PUNCHData(NDCube):
         Header
 
         """
-        header_wcs = self.wcs.to_header()
+        date_obs = Time(self.meta.datetime)
+
+        celestial_wcs_header = self.wcs.to_header()
         output_header = astropy.io.fits.Header()
 
         unused_keys = ['DATE-OBS', 'DATE-BEG', 'DATE-AVG', 'DATE-END', 'DATE',
                        'MJD-OBS', 'TELAPSE', 'RSUN_REF', 'TIMESYS']
 
-        for key in unused_keys:
-            if key in header_wcs:
-                del header_wcs[key]
+        if len(self.data.shape) == 2:
+            helio_wcs = calculate_2d_helio_wcs_from_celestial(wcs_celestial=self.wcs,
+                                                               date_obs=date_obs,
+                                                               data_shape=self.data.shape)
+        elif len(self.data.shape) == 3:
+            helio_wcs = calculate_3d_helio_wcs_from_celestial(wcs_celestial=self.wcs,
+                                                               date_obs=date_obs,
+                                                               data_shape=self.data.shape)
+        else:
+            raise ValueError("TODO")
 
-        if header_wcs['WCSAXES'] == 2:
-            spatial_coord_1 = 0
-            spatial_coord_2 = 1
-        elif header_wcs['WCSAXES'] == 3:
-            spatial_coord_1 = 1
-            spatial_coord_2 = 2
+        helio_wcs_header = helio_wcs.to_header()
+
+        for key in unused_keys:
+            if key in celestial_wcs_header:
+                del celestial_wcs_header[key]
+            if key in helio_wcs_header:
+                del helio_wcs_header[key]
 
         if self.meta['CTYPE1'] is not None:
-            for key, value in header_wcs.items():
+            for key, value in helio_wcs.to_header().items():
                 output_header[key] = value
         if self.meta['CTYPE1A'] is not None:
-            for key, value in header_wcs.items():
+            for key, value in celestial_wcs_header.items():
                 output_header[key + 'A'] = value
-            output_header['CTYPE'+str(spatial_coord_1+1)+'A'] = 'RA-ARC'
-            output_header['CTYPE'+str(spatial_coord_2+1)+'A'] = 'DEC-ARC'
-            output_header['CDELT'+str(spatial_coord_1+1)+'A'] = -1 * output_header['CDELT'+str(spatial_coord_1+1)+'A']
 
-            center_helio_coord = SkyCoord(self.wcs.wcs.crval[spatial_coord_1]*u.deg,
-                                          self.wcs.wcs.crval[spatial_coord_2]*u.deg,
-                                          frame=frames.Helioprojective,
-                                          obstime=self.meta['DATE-OBS'].value,
-                                          observer='earth')
-
-            with frames.Helioprojective.assume_spherical_screen(SkyCoord(center_helio_coord.observer)):
-                center_celestial_coord = center_helio_coord.transform_to(GCRS)
-
-            output_header['CRVAL'+str(spatial_coord_1+1)+'A'] = center_celestial_coord.ra.value
-            output_header['CRVAL'+str(spatial_coord_2+1)+'A'] = center_celestial_coord.dec.value
-
-            p_angle = sun.P(time=self.meta['DATE-OBS'].value)
-
-            rotation_matrix = np.array([[np.cos(p_angle), -1*np.sin(p_angle)],[np.sin(p_angle), np.cos(p_angle)]])
-
-            pc_celestial = np.matmul(self.wcs.wcs.pc[spatial_coord_1:,spatial_coord_1:], rotation_matrix).astype('float16')
-
-            output_header['PC'+str(spatial_coord_1+1)+'_'+str(spatial_coord_1+1)+'A'] = pc_celestial[0, 0]
-            output_header['PC'+str(spatial_coord_1+1)+'_'+str(spatial_coord_2+1)+'A'] = pc_celestial[0, 1]
-            output_header['PC'+str(spatial_coord_2+1)+'_'+str(spatial_coord_1+1)+'A'] = pc_celestial[1, 0]
-            output_header['PC'+str(spatial_coord_2+1)+'_'+str(spatial_coord_2+1)+'A'] = pc_celestial[1, 1]
+        index = 1 if len(self.data.shape) == 3 else 0
+        center_helio_coord = SkyCoord(helio_wcs.wcs.crval[index]*u.deg,
+                                      helio_wcs.wcs.crval[index+1]*u.deg,
+                                      frame=frames.Helioprojective,
+                                      obstime=date_obs,
+                                      observer='earth')
 
         output_header['RSUN_ARC'] = solar_angular_radius(center_helio_coord).value
-        output_header['SOLAR_EP'] = p_angle.value
-        output_header['CAR_ROT'] = float(sun.carrington_rotation_number(t=self.meta['DATE-OBS'].value))
+        output_header['SOLAR_EP'] = p_angle_gcrs(date_obs).value
+        output_header['CAR_ROT'] = float(sun.carrington_rotation_number(t=date_obs))
 
         return output_header
 
-    def _write_fits(self, filename: str, overwrite: bool=True) -> None:
+    def _write_fits(self, filename: str, overwrite: bool=True, skip_wcs_conversion: bool=False) -> None:
         """Write PUNCHData elements to FITS files
 
         Parameters
@@ -1004,7 +1099,10 @@ class PUNCHData(NDCube):
         header = self.meta.to_fits_header()
 
         # update the header with the WCS
-        wcs_header = self.construct_wcs_header_fields()
+        if skip_wcs_conversion:
+            wcs_header = self.wcs.to_header()
+        else:
+            wcs_header = self.construct_wcs_header_fields()
         for key, value in wcs_header.items():
             if key in header:
                 header[key] = (self.meta[key]._datatype)(value)
