@@ -18,7 +18,7 @@ def create_f_corona_test_data(path="../punchbowl/level3/tests/data/"):
         data = np.ones((10, 10)) * i
         obj = PUNCHData(data, wcs, meta)
         file_path = os.path.join(path, f"test_{i}.fits")
-        obj.write(file_path, overwrite=True)
+        obj.write(file_path, overwrite=True, skip_wcs_conversion=True)
 
 
 def create_punchdata_test_data(path="../punchbowl/tests/"):
@@ -28,7 +28,7 @@ def create_punchdata_test_data(path="../punchbowl/tests/"):
     data = np.ones((10, 10))
     obj = PUNCHData(data, wcs, meta)
     file_path = os.path.join(path, "test_data.fits")
-    obj.write(file_path, overwrite=True)
+    obj.write(file_path, overwrite=True, skip_wcs_conversion=True)
 
 
 def create_header_validation_test_data(path="../punchbowl/tests/"):
@@ -55,7 +55,7 @@ def create_quartic_coefficients_test_data(path="../punchbowl/level1/tests/data/"
     data = create_constant_quartic_coefficients((10, 10))
     obj = PUNCHData(data, wcs, meta)
     file_path = os.path.join(path, "test_quartic_coeffs.fits")
-    obj.write(file_path, overwrite=True)
+    obj.write(file_path, overwrite=True, skip_wcs_conversion=True)
 
 
 if __name__ == "__main__":
