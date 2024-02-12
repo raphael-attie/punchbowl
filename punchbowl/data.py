@@ -72,21 +72,18 @@ def extract_crota_from_wcs(wcs, is_3d=False):
     return np.arctan2(wcs.wcs.pc[index+1, index], wcs.wcs.pc[index, index]) * u.rad
 
 
-def p_angle_gcrs(date_obs):
-    geocentric = GCRS(obstime=date_obs)
-    p_angle = _sun_north_angle_to_z(geocentric)
-    return p_angle
+def calculate_helio_wcs_from_celestial(wcs_celestial, date_obs, data_shape):
+    is_3d = len(data_shape) == 3
+    index = 1 if is_3d else 0
 
-
-def calculate_2d_helio_wcs_from_celestial(wcs_celestial, date_obs, data_shape):
     # we're at the center of the Earth
     test_loc = EarthLocation.from_geocentric(0, 0, 0, unit=u.m)
     test_gcrs = SkyCoord(test_loc.get_gcrs(date_obs))
 
     # follow the SunPy tutorial from here
     # https://docs.sunpy.org/en/stable/generated/gallery/units_and_coordinates/radec_to_hpc_map.html#sphx-glr-generated-gallery-units-and-coordinates-radec-to-hpc-map-py
-    reference_coord = SkyCoord(wcs_celestial.wcs.crval[0] * u.Unit(wcs_celestial.wcs.cunit[0]),
-                               wcs_celestial.wcs.crval[1] * u.Unit(wcs_celestial.wcs.cunit[1]),
+    reference_coord = SkyCoord(wcs_celestial.wcs.crval[index] * u.Unit(wcs_celestial.wcs.cunit[index]),
+                               wcs_celestial.wcs.crval[index+1] * u.Unit(wcs_celestial.wcs.cunit[index+1]),
                                frame='gcrs',
                                obstime=date_obs,
                                obsgeoloc=test_gcrs.cartesian,
@@ -96,18 +93,17 @@ def calculate_2d_helio_wcs_from_celestial(wcs_celestial, date_obs, data_shape):
 
     reference_coord_arcsec = reference_coord.transform_to(frames.Helioprojective(observer=test_gcrs))
 
-    cdelt1 = (np.abs(wcs_celestial.wcs.cdelt[0]) * u.deg).to(u.arcsec)
-    cdelt2 = (np.abs(wcs_celestial.wcs.cdelt[1]) * u.deg).to(u.arcsec)
+    cdelt1 = (np.abs(wcs_celestial.wcs.cdelt[index]) * u.deg).to(u.arcsec)
+    cdelt2 = (np.abs(wcs_celestial.wcs.cdelt[index+1]) * u.deg).to(u.arcsec)
 
-    # p_angle = p_angle_gcrs(date_obs)  # we use GCRS to be consistent in coordinate systems
     geocentric = GCRS(obstime=date_obs)
     p_angle = _sun_north_angle_to_z(geocentric)
 
-    crota = extract_crota_from_wcs(wcs_celestial, is_3d=False)
+    crota = extract_crota_from_wcs(wcs_celestial, is_3d=is_3d)
 
-    new_header = sunpy.map.make_fitswcs_header(data_shape, reference_coord_arcsec,
-                                               reference_pixel=u.Quantity([wcs_celestial.wcs.crpix[0] - 1,
-                                                                           wcs_celestial.wcs.crpix[1] - 1] * u.pixel),
+    new_header = sunpy.map.make_fitswcs_header(data_shape[index:], reference_coord_arcsec,
+                                               reference_pixel=u.Quantity([wcs_celestial.wcs.crpix[index] - 1,
+                                                                           wcs_celestial.wcs.crpix[index+1] - 1] * u.pixel),
                                                scale=u.Quantity([cdelt1, cdelt2] * u.arcsec / u.pix),
                                                rotation_angle=-p_angle-crota,
                                                observatory='PUNCH',
@@ -115,57 +111,10 @@ def calculate_2d_helio_wcs_from_celestial(wcs_celestial, date_obs, data_shape):
 
     wcs_helio = WCS(new_header)
 
-    return wcs_helio
+    if is_3d:
+        wcs_helio = astropy.wcs.utils.add_stokes_axis_to_wcs(wcs_helio, 0)
 
-
-def calculate_3d_helio_wcs_from_celestial(wcs_celestial, date_obs, data_shape):
-    # we're at the center of the Earth
-    test_loc = EarthLocation.from_geocentric(0, 0, 0, unit=u.m)
-    test_gcrs = SkyCoord(test_loc.get_gcrs(date_obs))
-
-    # follow the SunPy tutorial from here
-    # https://docs.sunpy.org/en/stable/generated/gallery/units_and_coordinates/radec_to_hpc_map.html#sphx-glr-generated-gallery-units-and-coordinates-radec-to-hpc-map-py
-    reference_coord = SkyCoord(wcs_celestial.wcs.crval[1] * u.Unit(wcs_celestial.wcs.cunit[1]),
-                               wcs_celestial.wcs.crval[2] * u.Unit(wcs_celestial.wcs.cunit[2]),
-                               frame='gcrs',
-                               obstime=date_obs,
-                               obsgeoloc=test_gcrs.cartesian,
-                               obsgeovel=test_gcrs.velocity.to_cartesian(),
-                               distance=test_gcrs.hcrs.distance
-                               )
-
-    reference_coord_arcsec = reference_coord.transform_to(frames.Helioprojective(observer=test_gcrs))
-
-    cdelt2 = (np.abs(wcs_celestial.wcs.cdelt[1]) * u.deg).to(u.arcsec)
-    cdelt3 = (np.abs(wcs_celestial.wcs.cdelt[2]) * u.deg).to(u.arcsec)
-
-    # p_angle = p_angle_gcrs(date_obs)  # we use GCRS to be consistent in coordinate systems
-    geocentric = GCRS(obstime=date_obs)
-    p_angle = _sun_north_angle_to_z(geocentric)
-
-    crota = extract_crota_from_wcs(wcs_celestial, is_3d=True)
-
-    new_header = sunpy.map.make_fitswcs_header(data_shape[1:], reference_coord_arcsec,
-                                               reference_pixel=u.Quantity([wcs_celestial.wcs.crpix[1] - 1,
-                                                                           wcs_celestial.wcs.crpix[2] - 1] * u.pixel),
-                                               scale=u.Quantity([cdelt2, cdelt3] * u.arcsec / u.pix),
-                                               rotation_angle=-p_angle-crota,
-                                               projection_code='ARC',
-                                               observatory='PUNCH')
-    wcs_helio = WCS(new_header)
-
-    # new_pc = np.eye(3)
-    # new_pc[1:, 1:] = wcs_helio.wcs.pc.copy()
-
-    out_wcs = astropy.wcs.utils.add_stokes_axis_to_wcs(wcs_helio, 0)
-    # out_wcs = WCS(naxis=3)
-    # out_wcs.wcs.pc = new_pc
-    # out_wcs.wcs.crval = (wcs_celestial.wcs.crval[0], *wcs_helio.wcs.crval)
-    # out_wcs.wcs.crpix = (wcs_celestial.wcs.crpix[0], *wcs_helio.wcs.crpix)
-    # out_wcs.wcs.cdelt = (wcs_celestial.wcs.cdelt[0], *wcs_helio.wcs.cdelt)
-    # out_wcs.wcs.ctype = ("STOKES", *wcs_helio.wcs.ctype)
-
-    return out_wcs
+    return wcs_helio, p_angle
 
 
 HistoryEntry = namedtuple("HistoryEntry", "datetime, source, comment")
@@ -1040,16 +989,9 @@ class PUNCHData(NDCube):
         unused_keys = ['DATE-OBS', 'DATE-BEG', 'DATE-AVG', 'DATE-END', 'DATE',
                        'MJD-OBS', 'TELAPSE', 'RSUN_REF', 'TIMESYS']
 
-        if len(self.data.shape) == 2:
-            helio_wcs = calculate_2d_helio_wcs_from_celestial(wcs_celestial=self.wcs,
-                                                               date_obs=date_obs,
-                                                               data_shape=self.data.shape)
-        elif len(self.data.shape) == 3:
-            helio_wcs = calculate_3d_helio_wcs_from_celestial(wcs_celestial=self.wcs,
-                                                               date_obs=date_obs,
-                                                               data_shape=self.data.shape)
-        else:
-            raise ValueError("TODO")
+        helio_wcs, p_angle = calculate_helio_wcs_from_celestial(wcs_celestial=self.wcs,
+                                                       date_obs=date_obs,
+                                                       data_shape=self.data.shape)
 
         helio_wcs_header = helio_wcs.to_header()
 
@@ -1074,7 +1016,7 @@ class PUNCHData(NDCube):
                                       observer='earth')
 
         output_header['RSUN_ARC'] = solar_angular_radius(center_helio_coord).value
-        output_header['SOLAR_EP'] = p_angle_gcrs(date_obs).value
+        output_header['SOLAR_EP'] = p_angle.value
         output_header['CAR_ROT'] = float(sun.carrington_rotation_number(t=date_obs))
 
         return output_header
@@ -1109,7 +1051,6 @@ class PUNCHData(NDCube):
                 self.meta[key] = (self.meta[key]._datatype)(value)
 
         hdul_list = []
-
         hdu_dummy = fits.PrimaryHDU()
         hdul_list.append(hdu_dummy)
 
