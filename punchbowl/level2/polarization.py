@@ -1,56 +1,10 @@
 from typing import List
 
-import numpy as np
+import solpolpy
+from ndcube import NDCollection
 from prefect import get_run_logger, task
 
-import astropy.units as u
-
 from punchbowl.data import PUNCHData
-
-from ndcube import NDCollection
-
-import solpolpy
-
-
-def define_amatrix(arrayshape) -> np.ndarray:
-    """
-    Define an A matrix with which to convert MZP' (camera coords) = A x MZP (solar coords)
-
-    Parameters
-    -------
-    arrayshape
-        Defined input WCS array shape for matrix generation
-
-    Returns
-    -------
-    ndarray
-        Output A matrix used in converting between camera coordinates and solar coordinates
-
-    """
-
-    # Ideal MZP wrt Solar North
-    thmzp = [-60, 0, 60] * u.degree
-
-    long_arr, lat_arr = np.meshgrid(np.linspace(-20, 20, arrayshape[0]), np.linspace(-20, 20, arrayshape[1]))
-
-    # Foreshortening (IMAX) effect on polarizer angle
-    phi_m = np.arctan2(np.tan(thmzp[0]) * np.cos(long_arr * u.degree), np.cos(lat_arr * u.degree)) * 180 * u.degree / (
-            np.pi * u.radian)
-    phi_z = np.arctan2(np.tan(thmzp[1]) * np.cos(long_arr * u.degree), np.cos(lat_arr * u.degree)) * 180 * u.degree / (
-            np.pi * u.radian)
-    phi_p = np.arctan2(np.tan(thmzp[2]) * np.cos(long_arr * u.degree), np.cos(lat_arr * u.degree)) * 180 * u.degree / (
-            np.pi * u.radian)
-
-    phi = np.stack([phi_m, phi_z, phi_p])
-
-    # Define the A matrix
-    mat_a = np.empty((arrayshape[0], arrayshape[1], 3, 3))
-
-    for i in range(3):
-        for j in range(3):
-            mat_a[:, :, i, j] = (4 * np.cos(phi[i] - thmzp[j]) ** 2 - 1) / 3
-
-    return mat_a
 
 
 def resolve_polarization(data_list: List[PUNCHData]) -> List[PUNCHData]:
@@ -69,39 +23,15 @@ def resolve_polarization(data_list: List[PUNCHData]) -> List[PUNCHData]:
 
     """
 
-    # Unpack input data - originally in MZP w/r/t camera coordinates
-    data_mzp_camera = np.zeros([*data_list[0].data.shape, 3, 1])
-    for i, data in enumerate(data_list):
-        data_mzp_camera[:, :, i, 0] = data.data
-
-    # Generate the required A-matrix (MZP' (camera coords) = A x MZP (solar coords))
-    # This folds in the IMAX effect
-    mat_a = define_amatrix(data_list[0].data.shape)
-
-    # Invert a-matrix
-    mat_a_inv = np.linalg.inv(mat_a)
-
-    # Transform polarization from camera coordinates to solar coordinates
-    data_mzp_solar = np.matmul(mat_a_inv, data_mzp_camera)
-
-    # Repackage data
-    # TODO - update WCS as well, or make new data objects?
-    for i, data in enumerate(data_list):
-        data.duplicate_with_updates(data=data_mzp_solar[:, :, i, 0])
-
     # Unpack data into a NDCollection object
-    data_dictionary = dict((key, data) for key, data in zip(['Bm', 'Bz', 'Bp'], data_list))
+    data_dictionary = dict(zip(["Bm", "Bz", "Bp"], data_list))
     data_collection = NDCollection(data_dictionary)
 
-    # Resolve polarization (test parameters for now)
-    # TODO - Utilize solpolpy to convert from camera MZP to solar MZP
-    # This will require spacecraft rotation information
-    resolved_data_collection = solpolpy.resolve(data_collection, 'MZP')
+    resolved_data_collection = solpolpy.resolve(data_collection, "MZP", imax_effect=True)
 
     # Repack data
-    # Create new data objects for each resolved polarization?
     data_list = []
-    for key in resolved_data_collection.keys():
+    for key in resolved_data_collection:
         data_list.append(resolved_data_collection[key])
 
     return data_list
