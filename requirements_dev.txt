@@ -7,7 +7,7 @@ matplotlib
 ccsdspy
 prefect
 regularizepsf
-solpolpy
+git+https://github.com/punch-mission/solpolpy.git@imax-effect-integration
 setuptools
 pytest
 scipy
