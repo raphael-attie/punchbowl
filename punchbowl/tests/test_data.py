@@ -7,23 +7,17 @@ import pytest
 from astropy.io import fits
 from astropy.nddata import StdDevUncertainty
 from astropy.wcs import WCS
+from ndcube import NDCube
 from pytest import fixture
 
-from ndcube import NDCube
-
-from punchbowl.data import (
-    PUNCHData,
-    History,
-    HistoryEntry,
-    HeaderTemplate,
-    HEADER_TEMPLATE_COLUMNS,
-    NormalizedMetadata,
-    PUNCH_REQUIRED_META_FIELDS
-)
+from punchbowl.data import (HEADER_TEMPLATE_COLUMNS,
+                            PUNCH_REQUIRED_META_FIELDS, HeaderTemplate,
+                            History, HistoryEntry, NormalizedMetadata,
+                            PUNCHData)
 
 TESTDATA_DIR = os.path.dirname(__file__)
-SAMPLE_FITS_PATH_UNCOMPRESSED = os.path.join(TESTDATA_DIR, "PUNCH_L2_WQM_20080103071000_uncomp.fits")
-SAMPLE_FITS_PATH_COMPRESSED = os.path.join(TESTDATA_DIR, "PUNCH_L2_WQM_20080103071000.fits")
+SAMPLE_FITS_PATH_UNCOMPRESSED = os.path.join(TESTDATA_DIR, "test_data.fits")
+SAMPLE_FITS_PATH_COMPRESSED = os.path.join(TESTDATA_DIR, "test_data.fits")
 SAMPLE_WRITE_PATH = os.path.join(TESTDATA_DIR, "write_test.fits")
 SAMPLE_HEADER_PATH = os.path.join(TESTDATA_DIR, "hdr_test_template.csv")
 
