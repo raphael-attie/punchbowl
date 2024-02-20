@@ -1,5 +1,6 @@
 from typing import List
 import typing as t
+
 from prefect import get_run_logger, task
 from skimage.morphology import binary_dilation
 from punchbowl.data import PUNCHData
@@ -9,10 +10,10 @@ import numpy as np
 def find_spikes(
                 data: np.ndarray,
                 uncertainty: np.ndarray,
-                threshold: float = 10,
+                threshold: float = 4,
                 required_yes: int = 6,
                 veto_limit: int = 2,
-                diff_method: str = 'abs',
+                diff_method: str = 'sigma',
                 dilation: int = 0,
                 index_of_interest: t.Optional[int] = None):
     """Module to identify bright structures 
@@ -103,17 +104,13 @@ def find_spikes(
         bad pixels, and False flagging good data points
 
     TO DO/COMMENTS
-    -----
+    --------------
 
     consider what happens with rotation, and gaps, need to extract same region. 
     Are the regions without data flagged as NaN
 
 
     """
-
-    # when using PUNCHdata object here we extract uncertainty and data.
-    #data=PUNCHdata.data
-    #uncertainty=PUNCHdata.uncertainty
 
     # test if 3-D data cube is inserted
     if len(data.shape) != 3:
@@ -135,13 +132,12 @@ def find_spikes(
     # extract background frames to perform voting
     voters_array = np.delete(data, index_of_interest, 0)
     voters_array_uncertainty = np.delete(uncertainty, index_of_interest, 0)
-    
+
     # create a reference cube the same dimensions as the voter cube, filled with frame of interest
     ref_cube = np.stack([frame_of_interest for _ in range(voters_array.shape[0])], axis=0)
 
     # calculate abs difference between the reference cube and the voters
     difference_array = np.abs(ref_cube - voters_array)
-
 
     # calculate abs difference between the reference cube and the voters
     if diff_method == 'abs':
@@ -151,10 +147,10 @@ def find_spikes(
 
     # calculate sigma difference between the reference cube and the voters
     elif diff_method == 'sigma':
-        threshold_array = threshold*np.nanstd(voters_array, axis=0)
+        threshold_array = threshold*np.nanstd(voters_array, axis=0, where=voters_array_uncertainty<1.0)
 
     else:
-        raise ValueError("input an appropriate string")
+        raise ValueError("input an appropriate diff_method string `sigma` or `abs` are expected")
 
     # calculate yes votes
     yes_vote_array = np.sum(difference_array > threshold_array, axis=0)
@@ -173,7 +169,6 @@ def find_spikes(
 
     # if input data already has an uncertainty of 1, create a True flag
     flagged_features_array = np.where(frame_of_interest_uncertainty >= 1.0, True, flagged_features_array)
-    #flagged_features_array = np.where((1-frame_of_interest_uncertainty), flagged_features_array, True)
 
     for _ in range(dilation):
         binary_dilation(flagged_features_array, out=flagged_features_array)
@@ -182,7 +177,9 @@ def find_spikes(
 
 
 @task
-def identify_bright_structures_task(data_list: List[PUNCHData]) -> List[PUNCHData]:
+def identify_bright_structures_task( data: PUNCHData,
+                                     voter_filenames: list[str]
+                                    ) -> List[PUNCHData]:
     """Prefect task to perform bright structure identification
 
     Parameters
@@ -194,13 +191,47 @@ def identify_bright_structures_task(data_list: List[PUNCHData]) -> List[PUNCHDat
     -------
     PUNCHData
         modified version of the input data with the bright structures identified
+
+    TODO
+    ----
+        Need polarization of frames to match
+
+
+
     """
     logger = get_run_logger()
     logger.info("identify_bright_structures_task started")
-    # TODO: actually do the identification
+
+
+    
+    # construct voter cube
+    voters=[]
+    voters_uncertainty=[]
+    for voter_filename in voter_filenames:
+        voters.append(PUNCHData.from_fits(voter_filename).data)
+        voters_uncertainty.append(PUNCHData.from_fits(voter_filename).uncertainty)
+        
+        
+    # add frame of interest
+    voters.append(data.data)
+    voters_uncertainty.append(data.uncertainty)
+    
+    # apply find spikes
+    spike_mask=find_spikes(data=np.array(voters),
+                uncertainty=uncertainty,
+                threshold=threshold,
+                required_yes=required_yes,
+                veto_limit=veto_limit,
+                diff_method=diff_method,
+                dilation=dilation,
+                index_of_interest=-1)
+
+    # add the uncertainty to the output punch data object
+    data.uncertainty=np.max([data.uncertainty, spike_mask], axis=0)
+
     logger.info("identify_bright_structures_task ended")
-    for data_object in data_list:
-        data_object.meta.history.add_now("LEVEL2-bright_structures",
-                                         "bright structure identification completed")
-    print("test")
-    return data_list
+    
+    data.meta.history.add_now("LEVEL2-bright_structures",
+                              "bright structure identification completed")
+    
+    return data
