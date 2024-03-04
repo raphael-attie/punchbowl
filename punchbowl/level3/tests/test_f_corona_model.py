@@ -123,7 +123,7 @@ def test_empty_list() -> None:
     dataset of increasing values passed in, a bad pixel map is passed in
     """
     with pytest.raises(ValueError):
-        input_list = glob('./data/*.fits')
+        input_list = []
         with disable_run_logger():
             f_corona_model = construct_f_corona_background.fn(input_list)
 
