@@ -7,7 +7,7 @@ matplotlib
 ccsdspy
 prefect
 regularizepsf
-git+https://github.com/punch-mission/solpolpy.git@develop
+solpolpy
 setuptools
 pytest
 scipy
