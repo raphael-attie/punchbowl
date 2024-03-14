@@ -25,6 +25,7 @@ def spikejones(image: np.ndarray,
                method: str = 'convolve',
                alpha: float = 1,
                dilation: int = 0) -> np.ndarray:
+    image = image.copy()  # copy to avoid mutating the existing data
     # compute the sizes and smoothing kernel to be used
     kernel_size = unsharp_size * 2 + 1
     smoothing_size = kernel_size * 2 + 1
@@ -62,7 +63,11 @@ def spikejones(image: np.ndarray,
 
 
 @task
-def despike_task(data_object: PUNCHData) -> PUNCHData:
+def despike_task(data_object: PUNCHData,
+                 unsharp_size=3,
+                 method='convolve',
+                 alpha=1,
+                 dilation=0) -> PUNCHData:
     """Prefect task to perform despiking
 
     Parameters
@@ -77,7 +82,12 @@ def despike_task(data_object: PUNCHData) -> PUNCHData:
     """
     logger = get_run_logger()
     logger.info("despike started")
-    # TODO: do despiking in here
+    data_object.data[...] = spikejones(data_object.data[...],
+                                       unsharp_size=unsharp_size,
+                                       method=method,
+                                       alpha=alpha,
+                                       dilation=dilation)
+    # TODO: update uncertainty properly
     logger.info("despike finished")
     data_object.meta.history.add_now("LEVEL1-despike", "image despiked")
     return data_object
