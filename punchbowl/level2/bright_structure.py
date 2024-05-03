@@ -20,7 +20,7 @@ def find_spikes(
     Given a time sequence of images, identify "spikes" that exceed a
     threshold in a single frame.
 
-    Diffuse bright structures over1he background F-corona are 
+    Diffuse bright structures over the background F-corona are 
     identified and marked in the data using in-band "bad value" marking
     (which is supported by the FITS standard). Data marking follows the 
     existing ZSPIKE temporal despiking algorithm to identify auroral 
@@ -118,57 +118,74 @@ def find_spikes(
 
     # test if odd number of frames, or if a frame of interest has been included
     z_shape=np.shape(data[:,0,0])
+
     if z_shape[0] % 2 == 0:
         if index_of_interest is None:
             raise ValueError("The number of frames in `data` is expected to be odd, with frame of interest the center. Add frame_of_interest to specify a center frame.") 
     else:
         if index_of_interest is None:
-            index_of_interest = np.round(z_shape[0]/2)
+            index_of_interest = int(np.floor(z_shape[0]/2))
 
     # extract frame of interest
     frame_of_interest = data[index_of_interest,:,:]
     frame_of_interest_uncertainty = uncertainty[index_of_interest,:,:]
 
-    # extract background frames to perform voting
+    #print(index_of_interest)
+    #print('frame of int min max',np.min(frame_of_interest),np.max(frame_of_interest))
+
+    # extract background frames to perform voting by deleteing the frame of interest
     voters_array = np.delete(data, index_of_interest, 0)
+    #print('vot min max',np.min(voters_array), np.max(voters_array))
+
     voters_array_uncertainty = np.delete(uncertainty, index_of_interest, 0)
 
     # create a reference cube the same dimensions as the voter cube, filled with frame of interest
     ref_cube = np.stack([frame_of_interest for _ in range(voters_array.shape[0])], axis=0)
+    #print('ref min max',np.min(ref_cube),np.max(ref_cube))
 
     # calculate abs difference between the reference cube and the voters
     difference_array = np.abs(ref_cube - voters_array)
+    #print('dif min max',np.min(difference_array), 'dif max in',np.max(difference_array))
 
     # calculate abs difference between the reference cube and the voters
     if diff_method == 'abs':
 
         # create a threshold array of the same dimensions as the voter array where every value is the threshold
-        threshold_array = np.zeros_like(voters_array) + threshold
+        threshold_array = np.zeros_like( voters_array ) + threshold
 
     # calculate sigma difference between the reference cube and the voters
     elif diff_method == 'sigma':
-        threshold_array = threshold*np.nanstd(voters_array, axis=0, where=voters_array_uncertainty<1.0)
+        threshold_array = threshold * np.nanstd( voters_array, axis=0, where = voters_array_uncertainty < 1.0 )
 
     else:
         raise ValueError("input an appropriate diff_method string `sigma` or `abs` are expected")
 
+    #print('thr min max',np.min(threshold_array),np.max(threshold_array))
+
     # calculate yes votes
     yes_vote_array = np.sum(difference_array > threshold_array, axis=0)
+    #print('yes min max',np.min(yes_vote_array), np.max(yes_vote_array))
 
     # calculate no votes
     no_vote_array = np.zeros_like(frame_of_interest) + voters_array.shape[0] - yes_vote_array #np.sum(difference <= threshold, axis=0) 
+    #print('no vote min max',np.min(no_vote_array), np.max(no_vote_array))
+    #print('voter array shape', voters_array.shape[0], np.max(yes_vote_array))
 
     # create flagged_features_array
     flagged_features_array = yes_vote_array > required_yes
-        
+    #print('flag min max',np.min(flagged_features_array), np.max(flagged_features_array))
+
     # if the number of no votes exceeds a veto limit, then veto
     veto_mask = no_vote_array > veto_limit
-    
+    #print('veto_mask min max',np.min(veto_mask), np.max(veto_mask))
+
+
     # if veto'd create a False flag
     flagged_features_array[veto_mask] = False
 
     # if input data already has an uncertainty of 1, create a True flag
     flagged_features_array = np.where(frame_of_interest_uncertainty >= 1.0, True, flagged_features_array)
+
 
     for _ in range(dilation):
         binary_dilation(flagged_features_array, out=flagged_features_array)

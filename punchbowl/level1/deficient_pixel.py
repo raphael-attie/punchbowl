@@ -168,7 +168,7 @@ def remove_deficient_pixels_task(data: PUNCHData,
         raise ValueError(f"method specified must be 'mean', or 'median'. Found method={method}")
 
     # Set deficient pixels to infinity
-    output_uncertainty.array[deficient_pixel_array == 0] = 0
+    output_uncertainty.array[deficient_pixel_array == 0] = 1
 
     # todo: make use the duplicate_with_updates method
     output_object = data.duplicate_with_updates(data=data_array,
