@@ -150,7 +150,8 @@ def find_spikes(
     # calculate abs difference between the reference cube and the voters
     if diff_method == 'abs':
 
-        # create a threshold array of the same dimensions as the voter array where every value is the threshold
+        # create a threshold array of the same dimensions as the voter array where 
+        # every value is the threshold
         threshold_array = np.zeros_like( voters_array ) + threshold
 
     # calculate sigma difference between the reference cube and the voters
@@ -169,7 +170,8 @@ def find_spikes(
     # calculate no votes
     no_vote_array = np.zeros_like(frame_of_interest) + voters_array.shape[0] - yes_vote_array #np.sum(difference <= threshold, axis=0) 
     #print('no vote min max',np.min(no_vote_array), np.max(no_vote_array))
-    #print('voter array shape', voters_array.shape[0], np.max(yes_vote_array))
+    #print('no_vote_array 200', no_vote_array[200,200])
+    #print('no_vote_array 201', no_vote_array[201,200])
 
     # create flagged_features_array
     flagged_features_array = yes_vote_array > required_yes
@@ -177,11 +179,17 @@ def find_spikes(
 
     # if the number of no votes exceeds a veto limit, then veto
     veto_mask = no_vote_array > veto_limit
+    #print('veto_mask 200', veto_mask[200,200])
+    #print('veto_mask 201', veto_mask[201,200])    
     #print('veto_mask min max',np.min(veto_mask), np.max(veto_mask))
 
 
     # if veto'd create a False flag
-    flagged_features_array[veto_mask] = False
+    #print('flagged_features_array 200', flagged_features_array[200,200])
+    #print('flagged_features_array 201', flagged_features_array[201,200])
+    flagged_features_array[veto_mask] = True
+    #print('flagged_features_array 200', flagged_features_array[200,200])
+    #print('flagged_features_array 201', flagged_features_array[201,200])
 
     # if input data already has an uncertainty of 1, create a True flag
     flagged_features_array = np.where(frame_of_interest_uncertainty >= 1.0, True, flagged_features_array)
@@ -189,6 +197,52 @@ def find_spikes(
 
     for _ in range(dilation):
         binary_dilation(flagged_features_array, out=flagged_features_array)
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     
     return flagged_features_array
 

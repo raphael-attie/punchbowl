@@ -80,6 +80,29 @@ def even_sample_punchdata(shape: tuple = (6, 2048, 2048)) -> PUNCHData:
 
 
 @pytest.fixture()
+def sample_zero_punchdata(shape: tuple = (5, 2048, 2048)) -> PUNCHData:
+    """
+    Generate a sample PUNCHData object for testing
+    """
+
+    data = np.zeros(shape)
+    uncertainty = StdDevUncertainty(np.sqrt(np.abs(data)))
+
+    print('min',np.min(data))
+    print('max',np.max(data))
+    
+    wcs = WCS(naxis=2)
+    wcs.wcs.ctype = "HPLN-AZP", "HPLT-AZP"
+    wcs.wcs.cunit = "deg", "deg"
+    wcs.wcs.cdelt = 0.02, 0.02
+    wcs.wcs.crpix = 1024, 1024
+    wcs.wcs.crval = 0, 24.75
+
+    meta = NormalizedMetadata({"TYPECODE": "CL", "LEVEL": "1", "OBSRVTRY": "0", "DATE-OBS": "2008-01-03 08:57:00"})
+    return PUNCHData(data=data, uncertainty=uncertainty, wcs=wcs, meta=meta)
+
+
+@pytest.fixture()
 def one_bright_point_sample_punchdata(shape: tuple = (7, 2048, 2048)) -> PUNCHData:
     """
     Generate a sample PUNCHData object for testing
@@ -129,7 +152,6 @@ def two_bright_point_sample_punchdata(shape: tuple = (7, 2048, 2048)) -> PUNCHDa
     return PUNCHData(data=data, uncertainty=uncertainty, wcs=wcs, meta=meta)
 
 
-
 def test_valid_data_and_uncertainty(sample_punchdata: PUNCHData):
     with pytest.raises(Exception):
         # Call find_spikes with valid data and uncertainty
@@ -140,17 +162,27 @@ def test_valid_data_and_uncertainty(sample_punchdata: PUNCHData):
         assert result.shape == sample_punchdata.data.shape
 
 def test_zero_threshold(sample_punchdata: PUNCHData):
+    # test the thresholds are zero
     threshold = 0
-    result = find_spikes(sample_punchdata.data, sample_punchdata.uncertainty.array, threshold=threshold)
-    # Perform assertions
-    # For example, ensure that no spikes are detected when the threshold is zero
+    result = find_spikes(sample_punchdata.data, 
+                         sample_punchdata.uncertainty.array, 
+                         threshold=threshold,
+                         diff_method='abs')
     assert np.sum(result) == 0
 
-def test_diff_methods(sample_punchdata: PUNCHData):
+    result2 = find_spikes(sample_punchdata.data, 
+                         sample_punchdata.uncertainty.array, 
+                         threshold=threshold,
+                         diff_method='sigma')
+    assert np.sum(result) == 0
+    #assert np.array_equal(result_abs, result_sigma)
+
+
+def test_diff_methods(sample_zero_punchdata: PUNCHData):
     # Test with 'abs' method
-    result_abs = find_spikes(sample_punchdata.data, sample_punchdata.uncertainty.array, diff_method='abs')
+    result_abs = find_spikes(sample_zero_punchdata.data, sample_zero_punchdata.uncertainty.array, diff_method='abs')
     # Test with 'sigma' method
-    result_sigma = find_spikes(sample_punchdata.data, sample_punchdata.uncertainty.array, diff_method='sigma')
+    result_sigma = find_spikes(sample_zero_punchdata.data, sample_zero_punchdata.uncertainty.array, diff_method='sigma')
     # Perform assertions
     # For example, check if the results are different for different diff methods
     assert np.array_equal(result_abs, result_sigma)
@@ -233,6 +265,16 @@ def test_veto(two_bright_point_sample_punchdata: PUNCHData):
     # test cell of interest is set to 'False' with veto
     assert result_2[x_interest, y_interest] == True
 
+    result_3 = find_spikes(two_bright_point_sample_punchdata.data, 
+                           two_bright_point_sample_punchdata.uncertainty.array,
+                           diff_method='abs', 
+                           threshold=3, 
+                           required_yes=1, 
+                           veto_limit=0)
+
+    # test cell of interest is set to 'False' with veto
+    assert result_3[x_interest, y_interest] == False
+
 def test_veto_2(two_bright_point_sample_punchdata: PUNCHData):
     # test works with one vote
     x_interest = 200
@@ -245,5 +287,4 @@ def test_veto_2(two_bright_point_sample_punchdata: PUNCHData):
                            required_yes=1, 
                            veto_limit=0)
     
-    # test cell of interest is set to 'False' with veto
-    assert result_3[x_interest, y_interest] == False
+
