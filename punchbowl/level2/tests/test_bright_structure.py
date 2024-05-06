@@ -90,7 +90,7 @@ def sample_zero_punchdata(shape: tuple = (5, 2048, 2048)) -> PUNCHData:
 
     print('min',np.min(data))
     print('max',np.max(data))
-    
+
     wcs = WCS(naxis=2)
     wcs.wcs.ctype = "HPLN-AZP", "HPLT-AZP"
     wcs.wcs.cunit = "deg", "deg"
@@ -110,7 +110,7 @@ def one_bright_point_sample_punchdata(shape: tuple = (7, 2048, 2048)) -> PUNCHDa
     x_interest = 200
     y_interest = 200
     data = np.random.random(shape)
-    
+
     # add a bright point
     data[3, x_interest, y_interest]=1000
     uncertainty = StdDevUncertainty(np.sqrt(np.abs(data)))
@@ -134,7 +134,7 @@ def two_bright_point_sample_punchdata(shape: tuple = (7, 2048, 2048)) -> PUNCHDa
     x_interest = 200
     y_interest = 200
     data = np.random.random(shape)
-    
+
     # add two bright points in a row
     data[3, x_interest, y_interest]=1000
     data[4, x_interest, y_interest]=1000
@@ -164,14 +164,14 @@ def test_valid_data_and_uncertainty(sample_punchdata: PUNCHData):
 def test_zero_threshold(sample_punchdata: PUNCHData):
     # test the thresholds are zero
     threshold = 0
-    result = find_spikes(sample_punchdata.data, 
-                         sample_punchdata.uncertainty.array, 
+    result = find_spikes(sample_punchdata.data,
+                         sample_punchdata.uncertainty.array,
                          threshold=threshold,
                          diff_method='abs')
     assert np.sum(result) == 0
 
-    result2 = find_spikes(sample_punchdata.data, 
-                         sample_punchdata.uncertainty.array, 
+    result2 = find_spikes(sample_punchdata.data,
+                         sample_punchdata.uncertainty.array,
                          threshold=threshold,
                          diff_method='sigma')
     assert np.sum(result) == 0
@@ -200,7 +200,7 @@ def test_different_parameters(sample_punchdata: PUNCHData):
     assert result.shape == np.shape(sample_punchdata.data[0,:,:])
 
 def test_raise_error(even_sample_punchdata: PUNCHData):
-    # creates a raise error as an even array is passed in    
+    # creates a raise error as an even array is passed in
 
     with pytest.raises(ValueError):
         #sample_data.write(SAMPLE_WRITE_PATH)
@@ -224,25 +224,25 @@ def test_single_bright_point(sample_punchdata: PUNCHData):
     test_uncertainty=sample_punchdata.uncertainty.array
     test_data.data[3, 200, 200]=1000
     # add spike
-    
+
     result=find_spikes(test_data,test_uncertainty)
 
     assert result.shape == np.shape(sample_punchdata.data[0,:,:])
     assert isinstance(result, np.ndarray)
 
 def test_single_bright_point_2(one_bright_point_sample_punchdata: PUNCHData):
-    
+
 
     x_interest = 200
     y_interest = 200
-    
-    result_2 = find_spikes(one_bright_point_sample_punchdata.data, 
+
+    result_2 = find_spikes(one_bright_point_sample_punchdata.data,
                            one_bright_point_sample_punchdata.uncertainty.array,
-                           diff_method='abs', 
-                           threshold=3, 
-                           required_yes=1, 
+                           diff_method='abs',
+                           threshold=3,
+                           required_yes=1,
                            veto_limit=1)
-    
+
     # test cell of interest is set to 'True'
     assert result_2[x_interest, y_interest] == True
 
@@ -254,37 +254,25 @@ def test_veto(two_bright_point_sample_punchdata: PUNCHData):
     # test works with one vote
     x_interest = 200
     y_interest = 200
-    
-    result_2 = find_spikes(two_bright_point_sample_punchdata.data, 
+
+    result_2 = find_spikes(two_bright_point_sample_punchdata.data,
                            two_bright_point_sample_punchdata.uncertainty.array,
-                           diff_method='abs', 
-                           threshold=3, 
-                           required_yes=1, 
+                           diff_method='abs',
+                           threshold=3,
+                           required_yes=1,
                            veto_limit=1)
-    
+
     # test cell of interest is set to 'False' with veto
     assert result_2[x_interest, y_interest] == True
 
-    result_3 = find_spikes(two_bright_point_sample_punchdata.data, 
+    two_bright_point_sample_punchdata.uncertainty.array[:, :, :] = 0
+
+    result_3 = find_spikes(two_bright_point_sample_punchdata.data,
                            two_bright_point_sample_punchdata.uncertainty.array,
-                           diff_method='abs', 
-                           threshold=3, 
-                           required_yes=1, 
+                           diff_method='abs',
+                           threshold=3,
+                           required_yes=1,
                            veto_limit=0)
 
     # test cell of interest is set to 'False' with veto
     assert result_3[x_interest, y_interest] == False
-
-def test_veto_2(two_bright_point_sample_punchdata: PUNCHData):
-    # test works with one vote
-    x_interest = 200
-    y_interest = 200
-    
-    result_3 = find_spikes(two_bright_point_sample_punchdata.data, 
-                           two_bright_point_sample_punchdata.uncertainty.array,
-                           diff_method='abs', 
-                           threshold=3, 
-                           required_yes=1, 
-                           veto_limit=0)
-    
-
