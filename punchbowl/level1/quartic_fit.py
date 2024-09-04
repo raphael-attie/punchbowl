@@ -1,10 +1,19 @@
-
+import warnings
 import numpy as np
+
+from astropy.time import Time
 from ndcube import NDCube
 from prefect import get_run_logger, task
 
 from punchbowl.data import load_ndcube_from_fits
-
+from punchbowl.exceptions import (
+    IncorrectPolarizationStateWarning,
+    IncorrectTelescopeWarning,
+    InvalidDataError,
+    LargeTimeDeltaWarning,
+    NoCalibrationDataWarning,
+    DataShapeError,
+)
 
 def create_coefficient_image(flat_coefficients: np.ndarray, image_shape: tuple) -> np.ndarray:
     """
@@ -94,18 +103,9 @@ def photometric_calibration(image: np.ndarray, coefficient_image: np.ndarray) ->
     >>> data = photometric_calibration(punch_image, coefficient_image)
 
     """
-    # inspect dimensions
-    if len(image.shape) != 2:
-        msg = "`image` must be a 2-D image"
-        raise ValueError(msg)
-
     if len(coefficient_image.shape) != 3:
         msg = "`coefficient_image` must be a 3-D image"
-        raise ValueError(msg)
-
-    if coefficient_image.shape[:-1] != image.shape:
-        msg = "`coefficient_image` and `image` must have the same shape`"
-        raise ValueError(msg)
+        raise DataShapeError(msg)
 
     # find the number of quartic fit coefficients
     num_coefficients = coefficient_image.shape[2]
@@ -113,7 +113,6 @@ def photometric_calibration(image: np.ndarray, coefficient_image: np.ndarray) ->
         [coefficient_image[..., i] * np.power(image, num_coefficients - i - 1) for i in range(num_coefficients)],
         axis=0,
     )
-
 
 @task
 def perform_quartic_fit_task(data_object: NDCube, quartic_coefficients_path: str | None = None) -> NDCube:
@@ -141,16 +140,41 @@ def perform_quartic_fit_task(data_object: NDCube, quartic_coefficients_path: str
     logger = get_run_logger()
     logger.info("perform_quartic_fit started")
 
-    if quartic_coefficients_path is not None:
-        quartic_coefficients = load_ndcube_from_fits(quartic_coefficients_path)
-        new_data = photometric_calibration(data_object.data, quartic_coefficients.data)
-        data_object.data[...] = new_data[...]
-        data_object.meta.history.add_now(
-            "LEVEL1-quartic_fit", f"Quartic fit correction completed with {quartic_coefficients_path}",
-        )
+    if quartic_coefficients_path is None:
+        data_object.meta.history.add_now("LEVEL1-quartic_fit", "Quartic fit skipped")
+        msg=f"Calibration file {quartic_coefficients_path} is unavailable, quartic fit correction not applied"
+        warnings.warn(msg, NoCalibrationDataWarning)
+    elif not quartic_coefficients_path.exists():
+        msg = f"File {quartic_coefficients_path} does not exist."
+        raise InvalidDataError(msg)
     else:
-        data_object.meta.history.add_now("LEVEL1-quartic_fit", "Quartic fit correction skipped since path is empty")
-
+        quartic_coefficients = load_ndcube_from_fits(quartic_coefficients_path)
+        if len(data_object.data.shape) != 2:
+            msg = "`image` must be a 2-D image"
+            raise DataShapeError(msg)
+        if len(quartic_coefficients.data.shape) != 3:
+            msg = "`coefficient_image` must be a 3-D image"
+            raise DataShapeError(msg)
+        quartic_coefficients_date = Time(quartic_coefficients.meta["DATE-OBS"].value)
+        observation_date = Time(data_object.meta["DATE-OBS"].value)
+        if abs((quartic_coefficients_date - observation_date).to("day").value) > 365:
+            msg=(f"Calibration file {quartic_coefficients_path}"
+                " contains data created greater than 1 year from the obsveration")
+            warnings.warn(msg, LargeTimeDeltaWarning)
+        if quartic_coefficients.meta["TELESCOP"].value != data_object.meta["TELESCOP"].value:
+            msg=f"Incorrect TELESCOP value within {quartic_coefficients_path}"
+            warnings.warn(msg, IncorrectTelescopeWarning)
+        elif quartic_coefficients.meta["OBSLAYR1"].value != data_object.meta["OBSLAYR1"].value:
+            msg=f"Incorrect polarization state within {quartic_coefficients_path}"
+            warnings.warn(msg, IncorrectPolarizationStateWarning)
+        elif quartic_coefficients.data.shape[1:] != data_object.data.shape:
+            msg=f"Incorrect Quartic Fit function shape within {quartic_coefficients_path}"
+            raise InvalidDataError(msg)
+        else:
+            new_data = photometric_calibration(data_object.data, quartic_coefficients.data)
+            data_object.data[...] = new_data[...]
+            data_object.meta.history.add_now("LEVEL1-quartic_fit",
+                                             f"Quartic fit correction completed with {quartic_coefficients_path}")
     logger.info("perform_quartic_fit finished")
 
     return data_object

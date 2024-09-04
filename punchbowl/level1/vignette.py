@@ -76,7 +76,6 @@ def correct_vignetting_task(data_object: NDCube, vignetting_path: pathlib) -> ND
         if abs((vignetting_function_date - observation_date).to("day").value) > 14:
             msg=f"Calibration file {vignetting_path} contains data created greater than 2 weeks from the obsveration"
             warnings.warn(msg, LargeTimeDeltaWarning)
-
         if vignetting_function.meta["TELESCOP"].value != data_object.meta["TELESCOP"].value:
             msg=f"Incorrect TELESCOP value within {vignetting_path}"
             warnings.warn(msg, IncorrectTelescopeWarning)

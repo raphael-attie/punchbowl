@@ -10,6 +10,9 @@ class InvalidHeaderError(PUNCHBowlError):
 class MissingMetadataError(PUNCHBowlError):
     """Metadata missing for processing."""
 
+class DataShapeError(PUNCHBowlError):
+    """Data shape error."""
+
 class PUNCHBowlWarning(Warning):
     """Base class for warnings in punchbowl."""
 

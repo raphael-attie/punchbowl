@@ -43,3 +43,4 @@ def test_no_straylight_file(sample_ndcube) -> None:
         corrected_punchdata = remove_stray_light_task.fn(sample_data, straylight_filename)
         assert isinstance(corrected_punchdata, NDCube)
         assert corrected_punchdata.meta.history[0].comment == 'Stray light correction skipped'
+
