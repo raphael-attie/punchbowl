@@ -10,6 +10,9 @@ class InvalidHeaderError(PUNCHBowlError):
 class MissingMetadataError(PUNCHBowlError):
     """Metadata missing for processing."""
 
+class IncorrectFileCountError(PUNCHBowlError):
+    """Wrong number of files passed in."""
+
 class InvalidInput(PUNCHBowlError):
     """Invalid input."""
 

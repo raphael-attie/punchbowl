@@ -1,3 +1,4 @@
+import os
 import pathlib
 import warnings
 
@@ -55,8 +56,6 @@ def remove_stray_light_task(data_object: NDCube, stray_light_path: pathlib) -> N
 
     if stray_light_path is None:
         data_object.meta.history.add_now("LEVEL1-remove_stray_light", "Stray light correction skipped")
-
-
     elif not stray_light_path.exists():
         msg = f"File {stray_light_path} does not exist."
         raise InvalidDataError(msg)
@@ -80,8 +79,10 @@ def remove_stray_light_task(data_object: NDCube, stray_light_path: pathlib) -> N
             raise InvalidDataError(msg)
         else:
             data_object.data[:, :] -= stray_light_model.data[:, :]
+            # TODO : update uncertainty
+            data_object.meta["CALSL"] = os.path.basename(str(stray_light_path))
             data_object.meta.history.add_now("LEVEL1-remove_stray_light",
-                                             f"stray light removed with {stray_light_model}")
+                                             f"stray light removed with {os.path.basename(str(stray_light_model))}")
 
     logger.info("remove_stray_light finished")
     return data_object
