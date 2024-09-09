@@ -6,12 +6,92 @@ from ndcube import NDCube
 from prefect import get_run_logger, task
 
 from punchbowl.data import load_ndcube_from_fits
-from punchbowl.exceptions import InvalidDataError
+from punchbowl.exceptions import (
+    IncorrectPolarizationStateWarning,
+    IncorrectTelescopeWarning,
+    InvalidDataError,
+    LargeTimeDeltaWarning,
+    NoCalibrationDataWarning,
+    DataShapeError,
+    InvalidInput,
+    TimeRangeChange,
+)
+
+def generate_datetime_list(start_datetime: datetime.datetime = None, 
+                           end_datetime: datetime.datetime = None,
+                           mid_datetime: datetime.datetime = None,
+                           cadence: int = 60) -> list:
+    """
+    Creates a list of files based between a start date/time (start_datetime)
+    and an end date/time (end_datetime) for a specified polarizer and
+    PUNCH_product. The start and end times can both be input explicitly,
+    individually, or derived from a mid time.
+
+    Parameters
+    ----------
+    start_datetime : datetime, optional
+        start date for file list, if not provided it will be derived.
+
+    end_datetime : datetime, optional
+        end date for file list, if not provided it will be derived.
+
+    mid_datetime : datetime, optional
+        midpoint datetime from which start and end times will be derived 
+        (14 days before and after this date).
+
+    cadence : int
+        time interval in minutes for generating datetime list.
+
+    Returns
+    -------
+    datetime_list : list
+        list of datetime objects over the specified period based on cadence.
+    """
+    
+    # Handle case where mid_datetime is used
+    if mid_datetime:
+        start_datetime = mid_datetime - datetime.timedelta(days=14)
+        end_datetime = mid_datetime + datetime.timedelta(days=14)
+        msg=(f"mid_datetime is used, ignoring start_datetime and end_datetime."
+              " start_datetime={start_datetime}, end_datetime={end_datetime}")
+        raise TrimeRangeChange(msg)
+
+    # Handle case where only start_datetime is provided
+    elif start_datetime and not end_datetime:
+        warnings.warn("Only start_datetime provided, end_datetime is set to 28 days later.")
+        end_datetime = start_datetime + datetime.timedelta(days=28)
+
+    # Handle case where only end_datetime is provided
+    elif end_datetime and not start_datetime:
+        warnings.warn("Only end_datetime provided, start_datetime is set to 28 days earlier.")
+        start_datetime = end_datetime - datetime.timedelta(days=28)
+
+
+    # warn if cant full range of data - either not available or time not 2 weeks yet
+
+    # Create a list to hold the datetime objects
+    datetime_list = []
+    
+    # Initialize the current time with the start time
+    current_time = start_datetime
+    
+    # Generate datetime objects from start to end time with the given frequency
+    while current_time <= end_datetime:
+        datetime_list.append(current_time)
+        current_time += timedelta(minutes=frequency_minutes)
+    
+    return datetime_list
+
+
 
 
 @task
 def query_f_corona_model_source(
-    polarizer: str, product: str, start_datetime: datetime, end_datetime: datetime,
+    polarizer: str, 
+    product: str, 
+    start_datetime: datetime, 
+    end_datetime: datetime,
+    frequency: int = 60
 ) -> list[str]:
     """
     Create a list of files for later F corona model generation.
@@ -28,7 +108,7 @@ def query_f_corona_model_source(
 
     Parameters
     ----------
-    polarizer : string [= 'clear', '-60', '60', '0' ]
+    polarizer : string [= 'clear', 'polarized' ]
         input a string specifying the type of polarizer to search for
 
     product : string [= 'mosaic', 'nfi']
@@ -40,12 +120,14 @@ def query_f_corona_model_source(
     end_datetime : datetime
         input a start_datetime of interest.
 
+    frequency : minutes
+        input a frequency in minutes.
+
     Returns
     -------
     file_list : [list]
         returns a list of files over the specified period for the specified
         polarizer.
-
     """
     # TODO: Improve Query database code
     # TODO: Change placeholder output list
@@ -55,14 +137,27 @@ def query_f_corona_model_source(
     logger.info("query_f_corona_model_source started")
 
     # Check for polarizer input, and if valid
-    if polarizer not in ["clear", "-60", "60", "0"]:
-        msg = f"input polarizer expected as string: 'clear', '-60', '60', '0'. Found {polarizer}."
-        raise ValueError(msg)
+    if polarizer not in ["clear", "polarized"]:
+        msg = f"input polarizer expected as string: 'clear', 'polarized'. Found {polarizer}."
+        raise InvalidInput(msg)
 
     # Check for PUNCH input, and if valid
     if product not in ["nfi", "mosaic"]:
         msg = f"input PUNCH_product expected as string:  'nfi', 'mosaic'. Found {product}"
-        raise ValueError(msg)
+        raise InvalidInput(msg)
+
+    # Check for PUNCH input, and if valid
+    if not isinstance(start_datetime, datetime):
+        msg = "input start_datetime expected as datetime object"
+        raise InvalidInput(msg)
+
+    # Check for PUNCH input, and if valid
+    if not isinstance(end_datetime, datetime):
+        msg = "input end_datetime expected as datetime object"
+        raise InvalidInput(msg)
+
+
+
 
     # TODO - this place holder has to be removed
     file_list = []

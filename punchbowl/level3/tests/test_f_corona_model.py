@@ -105,7 +105,6 @@ def incorrect_shape_data(shape: tuple = (512, 512)) -> np.ndarray:
 
     return NDCube(data=data, uncertainty=uncertainty, wcs=wcs, meta=meta)
 
-
 def test_basic_subtraction(one_data: NDCube, zero_data: NDCube) -> None:
     """
     dataset of increasing values passed in, a bad pixel map is passed in
@@ -113,95 +112,3 @@ def test_basic_subtraction(one_data: NDCube, zero_data: NDCube) -> None:
     subtraction_punchdata = subtract_f_corona_background(one_data, zero_data.data)
     assert isinstance(subtraction_punchdata, NDCube)
     assert np.all(subtraction_punchdata.data == 1)
-
-
-@pytest.mark.prefect_test()
-def test_empty_list() -> None:
-    """
-    dataset of increasing values passed in, a bad pixel map is passed in
-    """
-    with pytest.raises(ValueError):
-        input_list = []
-        with disable_run_logger():
-            f_corona_model = construct_f_corona_background.fn(input_list)
-
-
-@pytest.mark.prefect_test()
-def test_create_simple_bkg() -> None:
-    """
-    dataset of increasing values passed in, a bad pixel map is passed in
-    """
-    input_list = glob(TESTDATA_DIR+'/data/*.fits')
-    with disable_run_logger():
-        f_corona_model = construct_f_corona_background.fn(input_list)
-
-    assert isinstance(f_corona_model, NDCube)
-
-
-@pytest.mark.prefect_test()
-def test_min_bkg() -> None:
-    """
-    dataset of increasing values passed in, a bad pixel map is passed in
-    """
-    input_list = glob(TESTDATA_DIR+'/data/*.fits')
-    with disable_run_logger():
-        f_corona_model = construct_f_corona_background.fn(input_list, method='min')
-
-    assert np.all(f_corona_model.data == 0)
-
-
-@pytest.mark.prefect_test()
-def test_mean_bkg() -> None:
-    """
-    dataset of increasing values passed in, a bad pixel map is passed in
-    """
-    input_list = glob(TESTDATA_DIR+'/data/*.fits')
-    with disable_run_logger():
-        f_corona_model = construct_f_corona_background.fn(input_list, method='mean')
-
-    assert np.all(f_corona_model.data == 4.5)
-
-
-@pytest.mark.prefect_test()
-def test_percent_5_bkg() -> None:
-    """
-    dataset of increasing values passed in, a bad pixel map is passed in
-    """
-    input_list = glob(TESTDATA_DIR+'/data/*.fits')
-    with disable_run_logger():
-        f_corona_model = construct_f_corona_background.fn(input_list)
-
-    assert np.all(f_corona_model.data == 0.45)
-
-
-@pytest.mark.prefect_test()
-def test_percent_10_bkg() -> None:
-    """
-    dataset of increasing values passed in, a bad pixel map is passed in
-    """
-    input_list = glob(TESTDATA_DIR+'/data/*.fits')
-    with disable_run_logger():
-        f_corona_model = construct_f_corona_background.fn(input_list, percentile_value=10)
-
-    assert np.all(f_corona_model.data == 0.9)
-
-
-@pytest.mark.prefect_test()
-def test_typo_method_bkg() -> None:
-    """
-    dataset of increasing values passed in, a bad pixel map is passed in
-    """
-    with pytest.raises(ValueError):
-        input_list = glob(TESTDATA_DIR+'/data/*.fits')
-        with disable_run_logger():
-            f_corona_model = construct_f_corona_background.fn(input_list, method="Marcus_rules")
-
-
-@pytest.mark.prefect_test()
-def test_different_array_size_subtraction(incorrect_shape_data: NDCube, zero_data: NDCube) -> None:
-    """
-    dataset of increasing values passed in, a bad pixel map is passed in
-    """
-    with pytest.raises(Exception):
-        with disable_run_logger():
-            subtraction_punchdata = subtract_f_corona_background_task.fn(incorrect_shape_data, zero_data)

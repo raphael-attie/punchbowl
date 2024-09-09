@@ -10,6 +10,9 @@ class InvalidHeaderError(PUNCHBowlError):
 class MissingMetadataError(PUNCHBowlError):
     """Metadata missing for processing."""
 
+class InvalidInput(PUNCHBowlError):
+    """Invalid input."""
+
 class DataShapeError(PUNCHBowlError):
     """Data shape error."""
 
@@ -30,3 +33,6 @@ class IncorrectPolarizationStateWarning(PUNCHBowlWarning):
 
 class IncorrectTelescopeWarning(PUNCHBowlWarning):
     """Mismatched telescope detected but ignored."""
+
+class TimeRangeChange(PUNCHBowlWarning):
+    """Time range changed."""
