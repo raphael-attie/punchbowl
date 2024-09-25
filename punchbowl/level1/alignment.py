@@ -10,19 +10,22 @@ from punchbowl.data.wcs import calculate_celestial_wcs_from_helio, calculate_hel
 
 
 @task
-def align_task(data_object: NDCube, mask=None) -> NDCube:
+def align_task(data_object: NDCube, mask: np.ndarray = None) -> NDCube:
     """
     Determine the pointing of the image and updates the metadata appropriately.
 
     Parameters
     ----------
     data_object : PUNCHData
-        data object to align
+        Data object to align.
+    mask : np.ndarray, optional
+        A mask to apply during alignment, where True values indicate
+        pixels to be ignored. Defaults to None.
 
     Returns
     -------
     PUNCHData
-        a modified version of the input with the WCS more accurately determined
+        A modified version of the input with the WCS more accurately determined.
 
     """
     logger = get_run_logger()

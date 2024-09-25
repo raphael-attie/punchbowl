@@ -62,7 +62,7 @@ def correct_vignetting_task(data_object: NDCube, vignetting_path: pathlib) -> ND
     logger.info("correct_vignetting started")
 
     if vignetting_path is None:
-        data_object.meta.history.add_now("LEVEL1-correct_vignetting", "Vignetting skipped")
+        data_object.meta.history.add_now("LEVEL1-correct_vignetting", "Vignetting skipped since path is empty")
         msg=f"Calibration file {vignetting_path} is unavailable, vignetting correction not applied"
         warnings.warn(msg, NoCalibrationDataWarning)
     elif not vignetting_path.exists():

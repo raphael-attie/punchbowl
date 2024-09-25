@@ -1,12 +1,14 @@
 import os
-
+import warnings
 import numpy as np
 from ndcube import NDCube
 from numpy.lib.stride_tricks import as_strided
 from prefect import get_run_logger, task
 
 from punchbowl.data import load_ndcube_from_fits
-
+from punchbowl.exceptions import (
+    NoCalibrationDataWarning,
+)
 
 def sliding_window(arr: np.ndarray, window_size: int) -> np.ndarray:
     """
@@ -49,7 +51,6 @@ def cell_neighbors(arr: np.ndarray, i: int, j: int, window_size: int = 1) -> np.
 
     return window[ix, jx][i0:i1, j0:j1].ravel()
 
-
 def mean_correct(
     data_array: np.ndarray, mask_array: np.ndarray, required_good_count: int = 3, max_window_size: int = 10,
 ) -> np.ndarray:
@@ -71,7 +72,6 @@ def mean_correct(
 
     return output_data_array
 
-
 def median_correct(
     data_array: np.ndarray, mask_array: np.ndarray, required_good_count: int = 3, max_window_size: int = 10,
 ) -> np.ndarray:
@@ -90,7 +90,6 @@ def median_correct(
         output_data_array[x_i, y_i] = np.nanmedian(cell_neighbors(data_array, x_i, y_i, window_size=window_size))
 
     return output_data_array
-
 
 def remove_deficient_pixels(data: NDCube,
                             deficient_pixels: np.ndarray,
@@ -181,6 +180,8 @@ def remove_deficient_pixels_task(
         output_object = data
         output_object.meta.history.add_now("LEVEL1-remove_deficient_pixels",
                                            "Remove deficient pixels skipped since path is empty")
+        msg=f"Calibration file {deficient_pixel_map_path} is unavailable, deficient pixel map correction not applied"
+        warnings.warn(msg, NoCalibrationDataWarning)
 
     else:
         deficient_pixel_map = load_ndcube_from_fits(deficient_pixel_map_path)

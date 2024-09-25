@@ -18,7 +18,7 @@ def convert_polarization(
                                  meta={"POLAR": angle}))
                        for (label, i, angle) in zip(["M", "Z", "P"],
                                                     [0, 1, 2],
-                                                    [-60*u.deg, 0*u.deg, 60*u.deg])]
+                                                    [-60*u.deg, 0*u.deg, 60*u.deg], strict=False)]
     data_collection = NDCollection(collection_contents, aligned_axes="all")
 
     resolved_data_collection = resolve(data_collection, "BpB", imax_effect=False)
@@ -27,7 +27,7 @@ def convert_polarization(
     new_wcs = input_data.wcs.copy()
 
     output_meta = NormalizedMetadata.load_template("PTM", "3")
-    output_meta['DATE-OBS'] = input_data.meta['DATE-OBS'].value
+    output_meta["DATE-OBS"] = input_data.meta["DATE-OBS"].value
     output = NDCube(data=new_data, wcs=new_wcs, meta=input_data.meta)
 
     logger.info("convert2bpb finished")

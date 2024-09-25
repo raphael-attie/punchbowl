@@ -13,7 +13,7 @@ class MissingMetadataError(PUNCHBowlError):
 class IncorrectFileCountError(PUNCHBowlError):
     """Wrong number of files passed in."""
 
-class InvalidInput(PUNCHBowlError):
+class InvalidInputError(PUNCHBowlError):
     """Invalid input."""
 
 class DataShapeError(PUNCHBowlError):
