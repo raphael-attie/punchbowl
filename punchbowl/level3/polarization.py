@@ -1,10 +1,11 @@
+import astropy.units as u
 import numpy as np
 from ndcube import NDCollection, NDCube
 from prefect import get_run_logger, task
 from solpolpy import resolve
-import astropy.units as u
 
 from punchbowl.data.meta import NormalizedMetadata
+
 
 @task
 def convert_polarization(

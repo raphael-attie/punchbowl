@@ -199,7 +199,6 @@ def identify_bright_structures_task(
         index_of_interest=-1)
 
     # add the uncertainty to the output punch data object
-    # TODO: check uncertainty
     data.uncertainty.array[spike_mask] = np.inf
 
     logger.info("identify_bright_structures_task ended")
