@@ -233,14 +233,3 @@ if __name__ == "__main__":
         level05_core_flow([filepath],
                          output_filename=[filepath.replace("synthetic_l0",
                                                            "forward_l05").replace("L0", "L1")])
-
-
-        level1_core_flow([filepath],
-                         vignetting_function_path=vignetting_function_path,
-                         despike_unsharp_size=1,
-                         despike_alpha=3,
-                         despike_method="median",
-                         psf_model_path="/d0/punchsoc/build_3_review_files/synthetic_forward_psf.h5",
-                         alignment_mask=mask_fn,
-                         output_filename=[filepath.replace("synthetic_l0",
-                                                           "forward_l1").replace("L0", "L1")])
