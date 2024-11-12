@@ -1,11 +1,13 @@
-import numpy as np
-from astropy.io import fits
+import os
 import glob
+
+import cv2 as cv
 import matplotlib
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
-import os
-import cv2 as cv
+import numpy as np
+from astropy.io import fits
+
 cv.setNumThreads(0)  # Disable OpenCV multithreading
 cv.ocl.setUseOpenCL(False)
 
@@ -31,9 +33,10 @@ def read_fits(filepath: str, hdu: int = 1) -> np.ndarray:
     -------
     np.ndarray, fits.header.Header
         2D image array from the specified FITS file.
+
     """
     with fits.open(filepath) as hdul:
-        hdul.verify('fix')
+        hdul.verify("fix")
         data = hdul[hdu].data
         header = hdul[hdu].header
 
@@ -55,9 +58,10 @@ def read_header(filepath: str, hdu: int = 1) -> fits.header.Header:
     -------
     fits.header.Header
         Header object from the specified FITS file.
+
     """
     with fits.open(filepath) as hdul:
-        hdul.verify('fix')
+        hdul.verify("fix")
         header = hdul[hdu].header
     return header
 
@@ -81,8 +85,8 @@ def calc_ylims(ycen_band_rs: np.ndarray, r_band_width: float, arcsec_per_px: flo
     -------
     list
         Lower and upper Numpy array indices of the radial band.
-    """
 
+    """
     # Unless we have a cropped image, bottom axis of the polar transform should be at 0 Rs.
     origin_rs = 0
     origin_arcsec = origin_rs * arcsec_per_px
@@ -119,12 +123,13 @@ def preprocess_image(image: np.ndarray, header: fits.header.Header, max_radius_p
     np.ndarray, dict
         - Preprocecess polar-remapped image
         - associated metadata
+
     """
     # Replace with appropriate preprocessing needed to clean-up. We need to have finite values for the polar remap
     # image[np.abs(image) > 100] = 0
     image[~np.isfinite(image)] = 0
 
-    polar_image = cv.warpPolar(image.astype(np.float64), [int(max_radius_px), int(num_azimuth_bins)], [header['CRPIX1'], header['CRPIX2']], max_radius_px, cv.INTER_CUBIC)
+    polar_image = cv.warpPolar(image.astype(np.float64), [int(max_radius_px), int(num_azimuth_bins)], [header["CRPIX1"], header["CRPIX2"]], max_radius_px, cv.INTER_CUBIC)
 
     polar_image_binned = polar_image.T.reshape([polar_image.shape[1], polar_image.shape[0] // az_bin, az_bin]).mean(axis=2)
     # Remove background radially by taking the mean over the radial axis (From Craig's original implementation)
@@ -136,20 +141,20 @@ def preprocess_image(image: np.ndarray, header: fits.header.Header, max_radius_p
     processed_image[~np.isfinite(processed_image)] = 0
 
     polar_header = {
-        'NAXIS': 2,
-        'CTYPE1': 'HPLN-CAR',
-        'NAXIS1': processed_image.shape[1],
-        'CDELT1': 360 / processed_image.shape[1],
-        'CUNIT1': 'deg',
-        'CRPIX1': 0.5,
-        'CRVAL1': 0,
-        'CTYPE2': 'HPLT-CAR',
-        'NAXIS2': processed_image.shape[0],
-        'CDELT2': 45 * 3600 / max_radius_px,
-        'CUNIT2': 'arcsec',
-        'CRPIX2': processed_image.shape[0]//2 + 0.5,
-        'CRVAL2': (processed_image.shape[0]//2 + 0.5) * (45 * 3600 / max_radius_px),
-        'DATE-OBS': header['DATE-OBS'],
+        "NAXIS": 2,
+        "CTYPE1": "HPLN-CAR",
+        "NAXIS1": processed_image.shape[1],
+        "CDELT1": 360 / processed_image.shape[1],
+        "CUNIT1": "deg",
+        "CRPIX1": 0.5,
+        "CRVAL1": 0,
+        "CTYPE2": "HPLT-CAR",
+        "NAXIS2": processed_image.shape[0],
+        "CDELT2": 45 * 3600 / max_radius_px,
+        "CUNIT2": "arcsec",
+        "CRPIX2": processed_image.shape[0]//2 + 0.5,
+        "CRVAL2": (processed_image.shape[0]//2 + 0.5) * (45 * 3600 / max_radius_px),
+        "DATE-OBS": header["DATE-OBS"],
     }
 
     return processed_image, polar_header
@@ -180,8 +185,8 @@ def calculate_cross_correlation(image1: np.ndarray, image2: np.ndarray, offsets:
     -------
     np.ndarray
         Accumulated cross-correlation array over all offsets.
-    """
 
+    """
     # Initialize accumulator array
     acc = np.zeros((len(offsets), image1.shape[0], image1.shape[1]), dtype=float)
     for jj, offset_index in enumerate(offsets):
@@ -194,14 +199,14 @@ def calculate_cross_correlation(image1: np.ndarray, image2: np.ndarray, offsets:
 
         # Padding the images symmetrically according to the direction of the shift. The padding rule is to replicate the values at the nearest edge
         if offset_1 < 0:
-            padded_image1 = np.pad(image1, ((0, -offset_1), (0, 0)), mode='edge')[abs(offset_1):image1.shape[0] + abs(offset_1), :]
+            padded_image1 = np.pad(image1, ((0, -offset_1), (0, 0)), mode="edge")[abs(offset_1):image1.shape[0] + abs(offset_1), :]
         else:
-            padded_image1 = np.pad(image1, ((offset_1, 0), (0, 0)), mode='edge')[:image1.shape[0], :]
+            padded_image1 = np.pad(image1, ((offset_1, 0), (0, 0)), mode="edge")[:image1.shape[0], :]
 
         if offset_2 < 0:
-            padded_image2 = np.pad(image2, ((-offset_2, 0), (0, 0)), mode='edge')[:image2.shape[0], :]
+            padded_image2 = np.pad(image2, ((-offset_2, 0), (0, 0)), mode="edge")[:image2.shape[0], :]
         else:
-            padded_image2 = np.pad(image2, ((0, offset_2), (0, 0)), mode='edge')[offset_2:image2.shape[0] + offset_2, :]
+            padded_image2 = np.pad(image2, ((0, offset_2), (0, 0)), mode="edge")[offset_2:image2.shape[0] + offset_2, :]
 
         acc[jj, :, :] += padded_image1 * padded_image2
 
@@ -252,9 +257,10 @@ def accumulate_cross_correlation_across_frames(files: list, hdu: int, delta_t: i
     -------
     np.ndarray
         Accumulated cross-correlation array over all frames and offsets.
+
     """
     sample, header = read_fits(files[0], hdu=hdu)
-    max_radius_px = max_radius_deg / header['CDELT1']
+    max_radius_px = max_radius_deg / header["CDELT1"]
     polar_sample, _ = preprocess_image(sample, header, max_radius_px, num_azimuth_bins, az_bin)
 
     acc = np.zeros((n_ofs, polar_sample.shape[0], polar_sample.shape[1]), dtype=float)
@@ -307,6 +313,7 @@ def compute_all_bands(acc: np.ndarray, ycen_band_rs: np.ndarray, r_band_half_wid
         Tuple containing:
         - np.ndarray : Average speed per angular bin for each radial band.
         - np.ndarray : Sigma (standard deviation) of speed per angular bin for each radial band.
+
     """
     ylohi = calc_ylims(ycen_band_rs, r_band_half_width, arcsec_per_px)
     # Determine spike location (index of the correlation peak) in the cross-correlation array
@@ -314,7 +321,7 @@ def compute_all_bands(acc: np.ndarray, ycen_band_rs: np.ndarray, r_band_half_wid
 
     avg_speeds = []
     sigmas = []
-    for kk, (ylo, yhi) in enumerate(zip(*ylohi)):
+    for kk, (ylo, yhi) in enumerate(zip(*ylohi, strict=False)):
         acc_k = acc[:, int(ylo):int(yhi) + 1, ...].mean(axis=1)
         # The modulus must be zero
         azimuth_bin_size = acc_k.shape[1] // velocity_azimuth_bins
@@ -336,7 +343,6 @@ def process_corr(files: list, hdu: int, arcsec_per_px:float, expected_kps_windsp
 
     Parameters
     ----------
-
     files : list
         List of file paths to FITS files.
 
@@ -383,7 +389,6 @@ def process_corr(files: list, hdu: int, arcsec_per_px:float, expected_kps_windsp
         Average speed and 1-sigma uncertainty over radius and angular bins
 
     """
-
     # Expected windspeed in pixels
     expected_px_windspeed =  expected_kps_windspeed / (arcsec_per_px * ARCSEC_KM ) * TIME_CADENCE_SEC
     # Central offset to start correlation from.
@@ -400,7 +405,7 @@ def process_corr(files: list, hdu: int, arcsec_per_px:float, expected_kps_windsp
 
 
 def plot_flow_map(speeds: np.ndarray, sigmas: np.ndarray, ycen_band_rs: np.ndarray, rbands: list[int], velocity_azimuth_bins: int,
-                  cmap: str = 'inferno'):
+                  cmap: str = "inferno"):
     """
     Plot polar maps of the radial flows.
 
@@ -418,10 +423,11 @@ def plot_flow_map(speeds: np.ndarray, sigmas: np.ndarray, ycen_band_rs: np.ndarr
         Number of angular bins in the velocity map.
     cmap : str, optional
         Colormap for the plot (default is 'inferno').
+
     """
     thetas = np.linspace(0, 2 * np.pi, velocity_azimuth_bins + 1)
 
-    plt.close('all')
+    plt.close("all")
     fig = plt.figure(figsize=(20, 8))
 
     vmin = speeds.min()
@@ -434,27 +440,27 @@ def plot_flow_map(speeds: np.ndarray, sigmas: np.ndarray, ycen_band_rs: np.ndarr
         signal = np.append(speeds[ridx], speeds[ridx][0])
         error = np.append(sigmas[ridx], sigmas[ridx][0])
 
-        ax = fig.add_subplot(1, len(rbands), i + 1, projection='polar')
-        ax.plot(thetas, signal, 'k-')
-        ax.fill_between(thetas, signal - error, signal + error, alpha=0.3, color='gray')
+        ax = fig.add_subplot(1, len(rbands), i + 1, projection="polar")
+        ax.plot(thetas, signal, "k-")
+        ax.fill_between(thetas, signal - error, signal + error, alpha=0.3, color="gray")
 
         colors = np.array([mapper.to_rgba(v) for v in signal])
-        for theta, value, err, color in zip(thetas, signal, error, colors):
-            ax.plot(theta, value, 'o', color=color, ms=4)
+        for theta, value, err, color in zip(thetas, signal, error, colors, strict=False):
+            ax.plot(theta, value, "o", color=color, ms=4)
             ax.errorbar(theta, value, yerr=err, lw=2, capsize=3, color=color)
 
-        ax.set_title(f'Altitude = {ycen_band_rs[ridx]} Rs')
+        ax.set_title(f"Altitude = {ycen_band_rs[ridx]} Rs")
         ax.set_ylim(50, 1.05 * vmax)
         ax.set_rlabel_position(270)
 
     cbar_ax = fig.add_axes([0.11, 0.2, 0.8, 0.03])
-    plt.colorbar(mapper, cax=cbar_ax, orientation='horizontal').ax.set_xlabel('Speed (km/s)')
-    plt.savefig('Radial_Speed_Map.png')
+    plt.colorbar(mapper, cax=cbar_ax, orientation="horizontal").ax.set_xlabel("Speed (km/s)")
+    plt.savefig("Radial_Speed_Map.png")
 
 
 if __name__ == "__main__":
     # Input parameters and configuration
-    files = sorted(glob.glob(os.path.join(os.environ['PUNCHDATA'], '*')))
+    files = sorted(glob.glob(os.path.join(os.environ["PUNCHDATA"], "*")))
     hdu = 1  # Index of the header data unit (change if necessary)
     delta_t = 12  # Time offset in frames between images
     sparsity = 2  # Frame skip interval for averaging
@@ -473,15 +479,15 @@ if __name__ == "__main__":
 
     # Testing preprocessing
     image1, header1 = read_fits(files[0], hdu=hdu)
-    prepped_image1, polar_header1 = preprocess_image(image1, header1, max_radius_deg/header1['CDELT1'], num_azimuth_bins, az_bin)
+    prepped_image1, polar_header1 = preprocess_image(image1, header1, max_radius_deg/header1["CDELT1"], num_azimuth_bins, az_bin)
 
-    avg_speeds, sigmas = process_corr(files, hdu, polar_header1['CDELT2'], expected_kps_windspeed, delta_t, sparsity, delta_px, r_band_half_width, n_ofs, max_radius_deg,
+    avg_speeds, sigmas = process_corr(files, hdu, polar_header1["CDELT2"], expected_kps_windspeed, delta_t, sparsity, delta_px, r_band_half_width, n_ofs, max_radius_deg,
                                       num_azimuth_bins, az_bin, velocity_azimuth_bins)
     #
     # # Save the speed and sigma data in a FITS file
     data_cube = np.stack((avg_speeds, sigmas), axis=0)
     hdu = fits.PrimaryHDU(data_cube)
-    hdu.writeto('speeds_sigmas.fits', overwrite=True)
+    hdu.writeto("speeds_sigmas.fits", overwrite=True)
 
     # Generate and save the radial flow map plot
     plot_flow_map(avg_speeds, sigmas, ycens, rbands, velocity_azimuth_bins)
