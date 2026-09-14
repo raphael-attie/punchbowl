@@ -14,7 +14,6 @@ from ndcube import NDCollection
 from remove_starfield import BlockMasker, ImageHolder, ImageProcessor, Starfield
 from remove_starfield.reducers import GaussianReducer
 from reproject import reproject_interp
-from scipy.ndimage import percentile_filter
 from scipy.stats import circmean
 from solpolpy import resolve
 from solpolpy.util import solnorth_from_wcs
@@ -305,9 +304,7 @@ def generate_starfield_background(
             pbar_class=LoggingProgressIndicator,
             target_mem_usage=target_mem_usage)
         logger.info("Done building starfields")
-
-        out_data = starfield_mzp.starfield - percentile_filter(starfield_mzp.starfield, percentile=5, size=(1, 10, 10))
-        out_data[out_data < 0] = 0
+        out_data = starfield_mzp.starfield
         out_wcs = calculate_helio_wcs_from_celestial(starfield_mzp.wcs, meta.astropy_time,
                                                      starfield_mzp.starfield.shape)
     else:
@@ -326,8 +323,7 @@ def generate_starfield_background(
             pbar_class=LoggingProgressIndicator,
             target_mem_usage=target_mem_usage)
         logger.info("Ending clear starfield")
-        out_data = starfield_clear.starfield - percentile_filter(starfield_clear.starfield, percentile=5, size=10)
-        out_data[out_data < 0] = 0
+        out_data = starfield_clear.starfield
         out_wcs = calculate_helio_wcs_from_celestial(starfield_clear.wcs,
                                                         meta.astropy_time,
                                                         starfield_clear.starfield.shape)
@@ -347,8 +343,9 @@ def generate_starfield_background(
 
 @punch_task
 def subtract_starfield_background_task(data_object: PUNCHCube,
-                                       before_starfield_path: str | None,
-                                       after_starfield_path: str | None,
+                                       before_starfield_path: str | None = None,
+                                       after_starfield_path: str | None = None,
+                                       starfield_path: str | None = None,
                                        is_polarized: bool = False) -> PUNCHCube:
     """
     Subtracts a background starfield from an input data frame.
@@ -364,6 +361,8 @@ def subtract_starfield_background_task(data_object: PUNCHCube,
         path to a PUNCHCube background starfield map centered before the observation
     after_starfield_path : str
         path to a PUNCHCube background starfield map centered after the observation
+    starfield_path : str
+        path to a single PUNCHCube background starfield map centered around the observation
     is_polarized : bool
         whether the data is polarized
 
@@ -376,12 +375,19 @@ def subtract_starfield_background_task(data_object: PUNCHCube,
     logger = get_logger()
     logger.info("subtract_starfield_background started")
 
-    if before_starfield_path is None and after_starfield_path is None:
+    if not any((before_starfield_path, after_starfield_path, starfield_path)):
         output = data_object
         output.meta.history.add_now("LEVEL3-subtract_starfield_background",
                                            "starfield subtraction skipped since path is empty")
-    elif before_starfield_path is None or after_starfield_path is None:
+        return output
+
+    if (before_starfield_path is None or after_starfield_path is None) and starfield_path is None:
         raise InvalidDataError("subtract_starfield_background requires two input starfield models.")
+
+    if starfield_path is not None:
+        star_datacube = load_ndcube_from_fits(starfield_path)
+        wcs_celestial = star_datacube.celestial_wcs
+        wcs_celestial.wcs.cdelt[0] = wcs_celestial.wcs.cdelt[0] * -1
     else:
         star_datacube_before = load_ndcube_from_fits(before_starfield_path)
         star_datacube_after = load_ndcube_from_fits(after_starfield_path)
