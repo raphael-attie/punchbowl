@@ -1,0 +1,1 @@
+Improve starfield blur by reprojecting directly to the image frame instead of intermediate union WCS.
