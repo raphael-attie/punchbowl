@@ -13,7 +13,7 @@ from dateutil.parser import parse as parse_datetime_str
 from ndcube import NDCollection
 from remove_starfield import BlockMasker, ImageHolder, ImageProcessor, Starfield
 from remove_starfield.reducers import GaussianReducer
-from reproject import reproject_interp
+from reproject import reproject_adaptive
 from scipy.stats import circmean
 from solpolpy import resolve
 from solpolpy.util import solnorth_from_wcs
@@ -383,14 +383,14 @@ def subtract_starfield_background_task(data_object: PUNCHCube,
     star_datacube_before = load_ndcube_from_fits(before_starfield_path)
     star_datacube_after = load_ndcube_from_fits(after_starfield_path)
 
-    starfield_reprojected_before = reproject_interp(
+    starfield_reprojected_before = reproject_adaptive(
         (np.stack([star_datacube_before.data, star_datacube_before.uncertainty.array], axis=0),
         star_datacube_before.celestial_wcs),
         data_object.celestial_wcs,
         shape_out=data_object.data.shape,
         return_footprint=False)
 
-    starfield_reprojected_after = reproject_interp(
+    starfield_reprojected_after = reproject_adaptive(
         (np.stack([star_datacube_after.data, star_datacube_after.uncertainty.array], axis=0),
         star_datacube_after.celestial_wcs),
         data_object.celestial_wcs,
