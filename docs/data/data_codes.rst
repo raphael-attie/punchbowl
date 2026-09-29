@@ -76,13 +76,13 @@ Data Product Codes
      - Polarized K NFI science image, bkg-sub & resolved into tB, pB with uncertainty
    * - 3
      - CNN
-     - Clear K NFI science image, bkg-sub & resolved into B with uncertainty
+     - Clear K NFI science image, bkg-sub & resolved into tB with uncertainty
    * - 3
      - VAM
      - Mosaic derived wind velocity maps: 1440 pos. angles at various altitudes
    * - 3
      - PAM
-     - Polarized low-noise science mosaic, bkg-sub & resolved into B, pB, pB' (pBp) with uncertainty
+     - Polarized low-noise science mosaic, bkg-sub & resolved into tB, pB, pB' (pBp) with uncertainty
    * - 3
      - CAM
      - Clear low-noise science mosaic, bkg-sub & resolved into tB with uncertainty
