@@ -12,6 +12,7 @@ from punchbowl.auto.control.scheduler import generic_scheduler_flow_logic
 from punchbowl.auto.control.util import group_files_by_time
 from punchbowl.auto.flows.level1 import get_mask_files
 from punchbowl.auto.flows.util import file_name_to_full_path
+from punchbowl.level1.dynamic_stray_light import phase_in_window
 from punchbowl.level2.flow import level2_core_flow
 from punchbowl.prefect import get_logger
 from punchbowl.util import average_datetime
@@ -127,11 +128,52 @@ def _level2_query_ready_files(session, polarized: bool, pipeline_config: dict, m
         continue
 
     final_input_files = [f for g in grouped_ready_files for f in g]
+
+    # we check that the accepted phase condition is met and only proceed for those images
+    accepted_phases = (pipeline_config["flows"]["level2" if polarized else "level2_clear"]
+                   .get("accepted_phases", [1, 2, 3, 4, 5, 6, 7]))  # if parameter is not set, we accept all phases
+    accepted_phases = [int(v) for v in accepted_phases]  # make sure every element is an integer
+    final_input_files = keep_accepted_phase_images(final_input_files, accepted_phases)
+    # if no images are in the accepted phase, we quit immediately
+    if len(final_input_files) == 0:
+        return []
+
     masks = get_mask_files(final_input_files, pipeline_config, session, level='2')
     for file, mask in zip(final_input_files, masks):
         file.mask = mask
     logger.info(f"{len(grouped_ready_files)} groups heading out")
     return grouped_ready_files
+
+def keep_accepted_phase_images(input_files: list[File], accepted_phases: list[int]) -> list[File]:
+    """
+    Given a list of input files, only keep those that have a phase in the accepted list.
+
+    Phases 1, 5 are PP
+    Phases 2, 6 are PZ
+    Phases 3, 7 are PM
+    Phase 4 is CR
+    Phases 1, 2, 3 are the first images acquired in a roll while 5, 6, 7 are the last
+
+    Parameters
+    ----------
+    input_files : list[File]
+        the files from the database to check their phase
+    accepted_phases : list[int]
+        only keep files that have a phase number in this list
+
+    Returns
+    -------
+    list[File]
+        the filtered file list
+    """
+    kept = []
+
+    for f in input_files:
+        phase_from_timestamp = phase_in_window(f.date_obs.strftime("_%Y%m%d%H%M%S_"))
+        if phase_from_timestamp in accepted_phases:
+            kept.append(f)
+
+    return kept
 
 
 def group_l2_inputs(files: list[File]) -> list[tuple[File]]:
