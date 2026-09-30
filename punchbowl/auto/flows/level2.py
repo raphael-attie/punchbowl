@@ -51,6 +51,14 @@ def _level2_query_ready_files(session, polarized: bool, pipeline_config: dict, m
     else:
         grouped_files = group_files_by_time(all_ready_files, max_duration_seconds=10)
 
+    # we check that the accepted phase condition is met and only proceed for those images
+    accepted_phases = (pipeline_config["flows"]["level2" if polarized else "level2_clear"]
+                   .get("accepted_phases", "1, 2, 3, 4, 5, 6, 7"))  # if parameter is not set, we accept all phases
+    accepted_phases = [int(v) for v in accepted_phases.split(",")]  # make sure every element is an integer
+    grouped_files = [keep_accepted_phase_images(group, accepted_phases) for group in grouped_files]
+    # we might have made empty groups at this point, so we drop all empty lists
+    grouped_files = [group for group in grouped_files if len(group) > 0]
+
     target_date = pipeline_config.get("target_date")
     target_date = parse_datetime_str(target_date) if target_date else None
     if target_date:
@@ -127,16 +135,8 @@ def _level2_query_ready_files(session, polarized: bool, pipeline_config: dict, m
         # Otherwise, we'll pass for now on processing this trefoil
         continue
 
+    # flatten the grouped ready files
     final_input_files = [f for g in grouped_ready_files for f in g]
-
-    # we check that the accepted phase condition is met and only proceed for those images
-    accepted_phases = (pipeline_config["flows"]["level2" if polarized else "level2_clear"]
-                   .get("accepted_phases", [1, 2, 3, 4, 5, 6, 7]))  # if parameter is not set, we accept all phases
-    accepted_phases = [int(v) for v in accepted_phases]  # make sure every element is an integer
-    final_input_files = keep_accepted_phase_images(final_input_files, accepted_phases)
-    # if no images are in the accepted phase, we quit immediately
-    if len(final_input_files) == 0:
-        return []
 
     masks = get_mask_files(final_input_files, pipeline_config, session, level='2')
     for file, mask in zip(final_input_files, masks):
@@ -406,3 +406,21 @@ def level2_process_flow(flow_id: int | list[int], pipeline_config_path=None, ses
 def level2_clear_process_flow(flow_id: int | list[int], pipeline_config_path=None, session=None):
     generic_process_flow_logic(flow_id, level2_core_flow, pipeline_config_path, session=session,
                                call_data_processor=level2_call_data_processor)
+
+
+# if __name__ == "__main__":
+#     print(phase_in_window("PUNCH_L1_PP2_20260505000526_v0l.fits"))
+#     print(phase_in_window("PUNCH_L1_PZ2_20260505000630_v0l.fits"))
+#     print(phase_in_window("PUNCH_L1_PM2_20260505000732_v0l.fits"))
+#     print(phase_in_window("PUNCH_L1_CR2_20260505000829_v0l.fits"))
+#     print(phase_in_window("PUNCH_L1_PP2_20260505000926_v0l.fits"))
+#     print(phase_in_window("PUNCH_L1_PZ2_20260505001030_v0l.fits"))
+#     print(phase_in_window("PUNCH_L1_PM2_20260505001132_v0l.fits"))
+#
+# @pytest.param
+# def test_level2_scheduler_flow_with_accepted_phases(db_phases):
+#     pipeline_config_path = os.path.join(TEST_DIR, "punchpipe_config.yaml")
+#     with prefect_test_harness():
+#         level2_scheduler_flow(pipeline_config_path, db)
+#     results = db.query(Flow).where(Flow.state == 'planned').all()
+#     assert len(results) == 1
