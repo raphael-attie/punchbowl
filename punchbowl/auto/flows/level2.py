@@ -406,21 +406,3 @@ def level2_process_flow(flow_id: int | list[int], pipeline_config_path=None, ses
 def level2_clear_process_flow(flow_id: int | list[int], pipeline_config_path=None, session=None):
     generic_process_flow_logic(flow_id, level2_core_flow, pipeline_config_path, session=session,
                                call_data_processor=level2_call_data_processor)
-
-
-# if __name__ == "__main__":
-#     print(phase_in_window("PUNCH_L1_PP2_20260505000526_v0l.fits"))
-#     print(phase_in_window("PUNCH_L1_PZ2_20260505000630_v0l.fits"))
-#     print(phase_in_window("PUNCH_L1_PM2_20260505000732_v0l.fits"))
-#     print(phase_in_window("PUNCH_L1_CR2_20260505000829_v0l.fits"))
-#     print(phase_in_window("PUNCH_L1_PP2_20260505000926_v0l.fits"))
-#     print(phase_in_window("PUNCH_L1_PZ2_20260505001030_v0l.fits"))
-#     print(phase_in_window("PUNCH_L1_PM2_20260505001132_v0l.fits"))
-#
-# @pytest.param
-# def test_level2_scheduler_flow_with_accepted_phases(db_phases):
-#     pipeline_config_path = os.path.join(TEST_DIR, "punchpipe_config.yaml")
-#     with prefect_test_harness():
-#         level2_scheduler_flow(pipeline_config_path, db)
-#     results = db.query(Flow).where(Flow.state == 'planned').all()
-#     assert len(results) == 1
