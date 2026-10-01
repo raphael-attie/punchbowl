@@ -41,7 +41,7 @@ jobs:
         uv run --no-sources ruff check .
     - name: Check uv lock file
       run: |
-        uv lock --locked --all-extras --no-sources
+        uv sync --locked
     - name: Run codespell on source code
       uses: codespell-project/actions-codespell@v2
       with:
