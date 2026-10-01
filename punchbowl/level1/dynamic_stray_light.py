@@ -38,11 +38,11 @@ def construct_dynamic_stray_light_model(filepaths: list[str], reference_time: da
 
     phases = make_phases(filepaths)
     if pol_state == "P":
-        i1, i2 = ImagePhase.POLARIZED_PLUS_EARLY, ImagePhase.POLARIZED_PLUS_LATE
+        i1, i2 = ImagePhase.POLARIZED_PP_PHASE_1, ImagePhase.POLARIZED_PP_PHASE_2
     elif pol_state == "Z":
-        i1, i2 = ImagePhase.POLARIZED_ZERO_EARLY, ImagePhase.POLARIZED_ZERO_LATE
+        i1, i2 = ImagePhase.POLARIZED_PZ_PHASE_1, ImagePhase.POLARIZED_PZ_PHASE_2
     elif pol_state == "M":
-        i1, i2 = ImagePhase.POLARIZED_MINUS_EARLY, ImagePhase.POLARIZED_MINUS_LATE
+        i1, i2 = ImagePhase.POLARIZED_PM_PHASE_1, ImagePhase.POLARIZED_PM_PHASE_2
     else:
         raise ValueError("Unrecognized polarization state")
 

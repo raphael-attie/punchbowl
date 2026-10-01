@@ -29,15 +29,15 @@ class ImagePhase(IntEnum):
     """
     Represents phases of image collection.
 
-    1 through 3 are the early polarized.
+    1 through 3 are the first set of polarized.
     4 is the clear.
-    4 through 7 are the late polarized.
+    4 through 7 are the second set of polarized.
     """
 
-    POLARIZED_PLUS_EARLY = 1
-    POLARIZED_ZERO_EARLY = 2
-    POLARIZED_MINUS_EARLY = 3
+    POLARIZED_PP_PHASE_1 = 1
+    POLARIZED_PZ_PHASE_1 = 2
+    POLARIZED_PM_PHASE_1 = 3
     CLEAR = 4
-    POLARIZED_PLUS_LATE = 5
-    POLARIZED_ZERO_LATE = 6
-    POLARIZED_MINUS_LATE = 7
+    POLARIZED_PP_PHASE_2 = 5
+    POLARIZED_PZ_PHASE_2 = 6
+    POLARIZED_PM_PHASE_2 = 7
