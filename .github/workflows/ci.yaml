@@ -40,8 +40,8 @@ jobs:
       run: |
         uv run --no-sources ruff check .
     - name: Check uv lock file
-      run: | 
-        uv lock --locked
+      run: |
+        uv lock --locked --all-extras --no-sources
     - name: Run codespell on source code
       uses: codespell-project/actions-codespell@v2
       with:
