@@ -54,7 +54,7 @@ def _level2_query_ready_files(session, polarized: bool, pipeline_config: dict, m
     # we check that the accepted phase condition is met and only proceed for those images
     accepted_phases = (pipeline_config["flows"]["level2" if polarized else "level2_clear"]
                    .get("accepted_phases", "1, 2, 3, 4, 5, 6, 7"))  # if parameter is not set, we accept all phases
-    accepted_phases = [int(v) for v in accepted_phases.split(",")]  # make sure every element is an integer
+    accepted_phases = [int(phase) for phase in accepted_phases.split(",")]  # make sure every element is an integer
     grouped_files = [keep_accepted_phase_images(group, accepted_phases) for group in grouped_files]
     # we might have made empty groups at this point, so we drop all empty lists
     grouped_files = [group for group in grouped_files if len(group) > 0]
