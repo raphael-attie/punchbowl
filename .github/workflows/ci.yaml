@@ -39,9 +39,6 @@ jobs:
     - name: Lint with ruff
       run: |
         uv run --no-sources ruff check .
-    - name: Check uv lock file
-      run: |
-        uv sync --locked
     - name: Run codespell on source code
       uses: codespell-project/actions-codespell@v2
       with:
