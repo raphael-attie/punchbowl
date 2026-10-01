@@ -8,6 +8,7 @@ import numpy as np
 from astropy.io import fits
 from astropy.wcs import WCS
 
+from punchbowl.constants import ImagePhase
 from punchbowl.data import NormalizedMetadata
 from punchbowl.data.punch_io import load_many_cubes, load_ndcube_from_fits
 from punchbowl.data.punchcube import PUNCHCube
@@ -89,11 +90,11 @@ def construct_dynamic_stray_light_model(filepaths: list[str], reference_time: da
 
     phases = make_phases(filepaths)
     if pol_state == "P":
-        i1, i2 = 1, 5
+        i1, i2 = ImagePhase.POLARIZED_PLUS_EARLY, ImagePhase.POLARIZED_PLUS_LATE
     elif pol_state == "Z":
-        i1, i2 = 2, 6
+        i1, i2 = ImagePhase.POLARIZED_ZERO_EARLY, ImagePhase.POLARIZED_ZERO_LATE
     elif pol_state == "M":
-        i1, i2 = 3, 7
+        i1, i2 = ImagePhase.POLARIZED_MINUS_EARLY, ImagePhase.POLARIZED_MINUS_LATE
     else:
         raise ValueError("Unrecognized polarization state")
 
