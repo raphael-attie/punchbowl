@@ -800,7 +800,7 @@ def get_metadata(first_image_packet,
     if typecode_first_guess in ("PP","PZ","PM","CR","PX"):
         phase_from_timestamp = phase_in_window(observation_midpoint.strftime("_%Y%m%d%H%M%S_"))
         match phase_from_timestamp:
-            case ImagePhase.POLARIZED_PLUS_EARLY | ImagePhase.POLARIZED_PLUS_EARLY:
+            case ImagePhase.POLARIZED_PLUS_EARLY | ImagePhase.POLARIZED_PLUS_LATE:
                 typecode = "PP"
             case ImagePhase.POLARIZED_ZERO_EARLY | ImagePhase.POLARIZED_ZERO_LATE:
                 typecode = "PZ"
