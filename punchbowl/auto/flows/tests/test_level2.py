@@ -668,10 +668,10 @@ def test_level2_scheduler_flow(db):
     assert len(results) == 1
 
 @pytest.mark.parametrize("accepted_phases, num_flows", [
-    ( "1, 2, 3, 4, 5, 6, 7", 2), # only make the two polarized flows
-    ("1, 2, 3, 5, 6, 7", 2), # only make the two polarized flows
-        ("1, 2, 3", 1),
-            ("1, 3", 0)
+    ( "1, 2, 3, 4, 5, 6, 7", 2), # use all images, only make the two flows
+    ("1, 2, 3, 5, 6, 7", 2), # use all but clears, only make the two flows
+        ("1, 2, 3", 1), # use only phase 1 polarized, only make one flow
+            ("1, 3", 0) # use only PP and PM from phase 1, no flows made
 ])
 def test_level2_scheduler_flow_with_accepted_phases(db_phases, accepted_phases, num_flows):
     pipeline_config = load_pipeline_configuration(os.path.join(TEST_DIR, "punchpipe_config.yaml"))
