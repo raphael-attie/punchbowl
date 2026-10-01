@@ -1,6 +1,6 @@
 """Constant values used in PUNCHBOWL project."""
 
-#: str: Special symbol for RTD import
+#: str: Current data version
 CURRENT_DATA_VERSION = "V0L"
 
 ORIGINAL_PUNCH_RESOLUTION = 2048
