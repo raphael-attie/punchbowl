@@ -66,10 +66,9 @@ from punchbowl.data import NormalizedMetadata, get_base_file_name, punch_io, wri
 from punchbowl.data.punchcube import PUNCHCube
 from punchbowl.data.wcs import calculate_helio_wcs_from_celestial, calculate_pc_matrix
 from punchbowl.exceptions import MissingMetadataError
-from punchbowl.level1.dynamic_stray_light import phase_in_window
 from punchbowl.limits import LimitSet
 from punchbowl.prefect import get_logger
-from punchbowl.util import load_mask_file
+from punchbowl.util import load_mask_file, phase_in_window
 
 FIXED_PACKETS = ["ENG_XACT", "ENG_LED", "ENG_PFW", "ENG_CEB", "ENG_LZ"]
 VARIABLE_PACKETS = ["SCI_XFI"]

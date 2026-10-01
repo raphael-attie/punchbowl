@@ -12,10 +12,9 @@ from punchbowl.auto.control.scheduler import generic_scheduler_flow_logic
 from punchbowl.auto.control.util import group_files_by_time
 from punchbowl.auto.flows.level1 import get_mask_files
 from punchbowl.auto.flows.util import file_name_to_full_path
-from punchbowl.level1.dynamic_stray_light import phase_in_window
 from punchbowl.level2.flow import level2_core_flow
 from punchbowl.prefect import get_logger
-from punchbowl.util import average_datetime
+from punchbowl.util import average_datetime, phase_in_window
 
 SCIENCE_POLARIZED_LEVEL1_TYPES = ["PM", "PZ", "PP"]
 SCIENCE_CLEAR_LEVEL1_TYPES = ["CR"]
