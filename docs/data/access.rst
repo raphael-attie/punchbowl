@@ -30,7 +30,8 @@ SunPy's Fido API.
 If that example is not working properly, you can also pull data directly from the SDAC using ``wget``.
 
 .. autodata:: constants.CURRENT_DATA_VERSION
-:const:`~constants.CURRENT_DATA_VERSION`
+.. autodata:: constants.ORIGINAL_PUNCH_RESOLUTIONgit s
+:const:`constants.CURRENT_DATA_VERSION`
 
 .. code-block:: bash
 
