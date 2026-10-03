@@ -1,4 +1,3 @@
-import sys
 import warnings
 from datetime import datetime
 from pathlib import Path
@@ -389,9 +388,9 @@ def preprocess_cube(
         new_median = median_filter(cube, size=(window, 1, 1), mode="nearest")
         cube -= new_median
 
-        # Steer clear of temporal edge effects, symmetrically
-        cube = cube[time_win[0]:time_win[1] + 1]
-        headers = headers[time_win[0]:time_win[1] + 1]
+    # Steer clear of temporal edge effects, symmetrically
+    cube = cube[time_win[0]:time_win[1] + 1]
+    headers = headers[time_win[0]:time_win[1] + 1]
 
     return cube, headers
 
@@ -737,6 +736,7 @@ def accumulate_cross_correlation_across_frames(
         az_bin: int,
         central_offset: int,
         product: str,
+        delta_px: int = 1,
         time_win: list = None,
         use_median: bool = True,
         crop: list = None,
@@ -779,6 +779,10 @@ def accumulate_cross_correlation_across_frames(
         PUNCH data product code of the input files (``'CAM'``, ``'PAM'``,
         ``'CTM'`` or ``'PTM'``).  For 3-D polarized/total-brightness cubes
         (PAM/PTM), only the first (total brightness) layer is used.
+    delta_px : int, optional
+        Pixel increment between successive offset samples of the
+        cross-correlation.  Must match the ``delta_px`` used to build the
+        velocity axis.  Default 1.
     time_win: tuple, optional
         start and end (inclusive) of the time slice of interest in the input time series.
         This is useful to not have edge effects from the sliding temporal median
@@ -870,7 +874,7 @@ def accumulate_cross_correlation_across_frames(
             with warnings.catch_warnings():
                 warnings.filterwarnings("error", message="All-NaN slice")
                 crossp, auto1, auto2 = calculate_cross_correlation(
-                    prepped1, prepped2, np.arange(n_ofs), central_offset, (lo_pad, hi_pad))
+                    prepped1, prepped2, np.arange(n_ofs), central_offset, (lo_pad, hi_pad), delta_px=delta_px)
         except RuntimeWarning as e:
             # prepped1/prepped2 are already bound here: count the columns that
             # are NaN at every row (exactly what makes nanmedian warn).
@@ -886,7 +890,7 @@ def accumulate_cross_correlation_across_frames(
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", RuntimeWarning)
                 crossp, auto1, auto2 = calculate_cross_correlation(
-                    prepped1, prepped2, np.arange(n_ofs), central_offset, (lo_pad, hi_pad))
+                    prepped1, prepped2, np.arange(n_ofs), central_offset, (lo_pad, hi_pad), delta_px=delta_px)
 
         acc_crossp += crossp
         acc_auto1 += auto1
@@ -955,7 +959,7 @@ def pearson_from_acc(acc_crossp, acc_auto1, acc_auto2,
 
 def process_corr_vel(files: list, preprocess_opts, delta_t, sparsity, n_ofs, polar_nr, azimuth_bins_remap, az_bin,
                      central_offset, x_kps, offset_speed_kps, vel_bin_width, annuli_crop,
-                     speed_max) -> tuple[np.ndarray, np.ndarray]:
+                     speed_max, delta_px: int = 1) -> tuple[np.ndarray, np.ndarray]:
     """
     Accumulate cross-correlations over a list of FITS files and fit peak speeds per annulus.
 
@@ -991,6 +995,10 @@ def process_corr_vel(files: list, preprocess_opts, delta_t, sparsity, n_ofs, pol
         Radial row windows (relative to the crop) of each annulus.
     speed_max : float
         Maximum velocity to consider in the peak calculation.
+    delta_px : int, optional
+        Pixel increment between successive offset samples of the
+        cross-correlation.  Must match the ``delta_px`` used to build
+        ``x_kps``.  Default 1.
 
     Returns
     -------
@@ -1003,7 +1011,7 @@ def process_corr_vel(files: list, preprocess_opts, delta_t, sparsity, n_ofs, pol
     acc = accumulate_cross_correlation_across_frames(
         files, delta_t, sparsity, n_ofs, polar_nr,
         azimuth_bins_remap, az_bin, central_offset,
-        **preprocess_opts)
+        delta_px=delta_px, **preprocess_opts)
 
     # Loop over the annuli
     speeds, sigmas = zip(*[correl_peak_speed(acc, a_crop, x_kps, offset_speed_kps, vel_bin_width,
@@ -1055,7 +1063,7 @@ def correl_peak_speed(acc, rows, x_speed, offset_speed, vel_bin_width,
     # Average correlation signal over the selected annuli
     acc_k = pearson_from_acc(*acc, rows=row_slice)
     if acc_k.shape[1] % vel_bin_width != 0:
-        sys.exit("Bin width must divide evenly the azimuthal axis")
+        raise ValueError("Bin width must divide evenly the azimuthal axis")
     n_az_bins = acc_k.shape[1] // vel_bin_width
     # Reshape the average correlation array for max efficiency of the per-bin velocity measurement
     avcor_rbins_theta = acc_k.reshape(acc_k.shape[0], n_az_bins, vel_bin_width).mean(axis=2)
@@ -1416,7 +1424,7 @@ def track_velocity(files: list[str] | list[Path],
                    delta_px: int = 1,
                    expected_wind_kps: int = 300,
                    offset_speed_kps: int = 50,
-                   annuli_centers_rs: float | np.ndarray = (40, 60),
+                   annuli_centers_rs: list[float | int] | np.ndarray = (40, 60),
                    annuli_width_rs: float = 20,
                    azimuth_bins_remap: int = 5760,
                    az_bin: int = 4,
@@ -1455,7 +1463,8 @@ def track_velocity(files: list[str] | list[Path],
         Number of spatial offsets for cross-correlation
 
     delta_px : int, optional
-        Pixel offset increment per sample
+        Pixel offset increment between successive correlation samples; also
+        used to build the velocity axis
 
     expected_wind_kps : int, optional
         Expected wind speed in km/s
@@ -1463,8 +1472,8 @@ def track_velocity(files: list[str] | list[Path],
     offset_speed_kps: int, optional
         Offset speed before which speeds are ignored when searching for the peak speed
 
-    annuli_centers_rs: float | list, optional
-        Centers of the annuli
+    annuli_centers_rs: sequence(float | int), optional
+        Centers of the annuli, need at east two for measuring any potential acceleration
 
     annuli_width_rs : float, optional
         Width of the annuli in solar radii
@@ -1537,6 +1546,9 @@ def track_velocity(files: list[str] | list[Path],
 
     # Accept tuples (the default), lists (e.g. from pipeline configs), or arrays
     annuli_centers_rs = np.atleast_1d(np.asarray(annuli_centers_rs, dtype=float))
+    # At least two annuli are needed to measure any potential acceleration
+    if len(annuli_centers_rs) < 2:
+        raise ValueError("annuli_centers_rs must have at least two elements")
 
     # We need to get a number of files sufficient to cover the integration time of the flow map + required buffer for
     # an evenly sliding temporal mean of either side of the first and last frame of interest
@@ -1579,14 +1591,14 @@ def track_velocity(files: list[str] | list[Path],
     annuli_crop = [a - annuli[0][0] for a in annuli]
 
     # For the polar-remmapped cropped image
-    r_low = annuli[0][0]
-    r_high = annuli[1][1]
+    r_low = min(a[0] for a in annuli)
+    r_high = max(a[1] for a in annuli)
 
     # Cross-correlation velocity offset based on expected speed, and velocity lookup axis
     effective_cadence_sec = tcadence_min[product_code] * delta_t * 60  # effective time step between frame pairs (s)
     expected_displacement_px = expected_wind_kps / km_per_px * effective_cadence_sec
     central_offset = int(expected_displacement_px)
-    _, x_kps = build_velocity_axis(n_ofs, central_offset, expected_wind_kps, delta_px=1)
+    _, x_kps = build_velocity_axis(n_ofs, central_offset, expected_wind_kps, delta_px=delta_px)
 
     # Wrap up inputs for preprecossing
     preprocess_opts = dict(
@@ -1601,7 +1613,7 @@ def track_velocity(files: list[str] | list[Path],
 
     speeds, sigmas = process_corr_vel(files, preprocess_opts, delta_t, sparsity, n_ofs, polar_nr,
                                          azimuth_bins_remap, az_bin, central_offset, x_kps, offset_speed_kps,
-                                         vel_bin_width, annuli_crop, speed_max)
+                                         vel_bin_width, annuli_crop, speed_max, delta_px=delta_px)
 
 
     # ------------------------------------------------------------------ #

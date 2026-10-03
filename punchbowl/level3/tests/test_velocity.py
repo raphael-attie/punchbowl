@@ -7,6 +7,7 @@ import pytest
 from astropy.nddata import StdDevUncertainty
 from astropy.wcs import WCS
 
+import punchbowl.level3.velocity as velocity_module
 from punchbowl.data import NormalizedMetadata, write_ndcube_to_fits
 from punchbowl.data.punchcube import PUNCHCube
 from punchbowl.level3.velocity import get_buffer, track_velocity
@@ -154,6 +155,63 @@ def test_recovers_outflow_speed(synthetic_data):
     # The ring is present at all azimuths, so nearly all of them should yield a speed
     assert np.isfinite(speeds).mean() > 0.9, "Most azimuths should yield a speed"
     assert np.median(speeds[np.isfinite(speeds)]) == pytest.approx(EXPECTED_WIND_KPS, rel=0.2)
+
+
+def test_recovers_outflow_speed_with_delta_px_two(synthetic_data):
+    """Test that delta_px=2 samples every other offset and still recovers the drift speed.
+
+    The ring drifts RING_DRIFT_PX (even) pixels per frame and the calibrated
+    central_offset is even, so the delta_px=2 offset grid contains the true
+    displacement exactly.  The coarse grid spaces the speed samples ~500 km/s
+    apart, so the peak-search range is adjusted for the peak finder: it needs
+    at least 10 in-range samples for its Gaussian fit to run, the peak must
+    sit inside the range rather than on its edge, and the range must stay
+    below the spurious far-lag correlations of the margin-free correlation
+    window.  offset_speed_kps=-5000 includes the sub-peak flank and
+    speed_max=2000 satisfies all three conditions.
+    """
+    files = synthetic_data
+    result = track_velocity(files, product_code=PRODUCT_CODE,
+                            **dict(TEST_PARAMS, delta_px=2, offset_speed_kps=-5000, speed_max=2000))
+
+    speeds = result.data
+    assert np.isfinite(speeds).any(), "Data contains no valid speed measurement"
+    assert np.isfinite(speeds).mean() > 0.9, "Most azimuths should yield a speed"
+    assert np.median(speeds[np.isfinite(speeds)]) == pytest.approx(EXPECTED_WIND_KPS, rel=0.2)
+
+
+def test_delta_px_is_forwarded_to_correlation_sampling(synthetic_data, monkeypatch):
+    """Test that delta_px reaches the correlation sampling and the velocity axis.
+
+    Regression test: track_velocity used to accept delta_px but silently drop
+    it, always correlating with 1-px steps and building the velocity axis with
+    a hardcoded delta_px=1, so only the DELTA_PX metadata keyword reflected the
+    caller's setting.
+    """
+    seen_correlation_delta_px = []
+    seen_axis_delta_px = []
+    original_correlation = velocity_module.calculate_cross_correlation
+    original_axis = velocity_module.build_velocity_axis
+
+    def recording_correlation(image1, image2, offsets, central_offset, margin, delta_px=1, k=4.0):
+        seen_correlation_delta_px.append(delta_px)
+        return original_correlation(image1, image2, offsets, central_offset, margin,
+                                     delta_px=delta_px, k=k)
+
+    def recording_axis(n_ofs, central_offset, expected_wind_kps, delta_px=1):
+        seen_axis_delta_px.append(delta_px)
+        return original_axis(n_ofs, central_offset, expected_wind_kps, delta_px=delta_px)
+
+    monkeypatch.setattr(velocity_module, "calculate_cross_correlation", recording_correlation)
+    monkeypatch.setattr(velocity_module, "build_velocity_axis", recording_axis)
+
+    files = synthetic_data
+    track_velocity(files, product_code=PRODUCT_CODE, **dict(TEST_PARAMS, delta_px=2))
+
+    # Every correlated pair, including any All-NaN retry, must use delta_px
+    assert seen_correlation_delta_px, "calculate_cross_correlation was never called"
+    assert set(seen_correlation_delta_px) == {2}
+    assert seen_axis_delta_px == [2]
 
 
 def test_insufficient_files_raises_value_error(synthetic_data):
