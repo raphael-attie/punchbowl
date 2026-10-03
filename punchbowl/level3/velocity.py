@@ -1,7 +1,6 @@
 import sys
-import re
 import warnings
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 import cv2 as cv  # https://docs.opencv.org/4.12.0/index.html
 import matplotlib.pyplot as plt
@@ -33,19 +32,19 @@ def get_buffer(frames_per_window: int, delta_t: int,
     Parameters
     ----------
     frames_per_window : int
-        Number of frames per window (before applying stride DELTA_T).
-        Defaults to the global FRAMES_PER_WINDOW.
+        Number of frames per window (before applying the stride delta_t).
     delta_t : int
-        Effective frame stride. Defaults to the global DELTA_T.
+        Effective frame stride between frames entering the window.
     cadence_min : int
-        Time interval between consecutive frames, before applying any stride
+        Time interval between consecutive frames in minutes, before applying any stride.
     target_hours : float
         Minimum total observation time in hours. Default 12.
 
     Returns
     -------
     int
-        Additional frames required (>= frames_per_window).
+        Number of additional frames required so that the strided window covers
+        at least ``target_hours``.  Always >= frames_per_window.
     """
     fpw = frames_per_window
     # Integration time covered by fpw frames with stride dt
@@ -105,24 +104,6 @@ def get_annulus(ycen_band_rs: float, r_band_width: float,
     return np.array([ylow, yhigh])
 
 
-def fdate(date_str: str) -> str:
-    """
-    Convert a datetime string to a compact, filesystem-safe token.
-
-    Parameters
-    ----------
-    date_str : str
-        Datetime string such as ``'2025/09/21 00:00:00'``.
-
-    Returns
-    -------
-    str
-        Compacted string with slashes, spaces, and colons removed,
-        e.g. ``'20250921_000000'``.
-    """
-    return date_str.replace('/', '').replace(' ', '_').replace(':', '')
-
-
 def build_velocity_axis(
         n_ofs: int,
         central_offset: int,
@@ -136,8 +117,6 @@ def build_velocity_axis(
     ----------
     n_ofs : int
         Number of offset samples.
-    delta_px : int
-        Pixel increment per sample.
     central_offset : int
         Pixel offset corresponding to the expected wind speed.
     expected_wind_kps : float
@@ -176,8 +155,8 @@ def polar_remap(
     Remap a PUNCH WFI image from Cartesian to polar coordinates.
 
     The OpenCV ``warpPolar`` routine is centred on ``(CRPIX1, CRPIX2)`` from
-    the FITS header.  The resulting image is then binned along the azimuthal
-    axis by averaging ``az_bin`` columns.
+    the FITS header.  The image is then low-pass filtered along the azimuthal
+    axis (anti-aliasing) and decimated by a factor of ``az_bin``.
 
     Parameters
     ----------
@@ -195,6 +174,9 @@ def polar_remap(
         Azimuthal binning factor; columns are averaged in groups of ``az_bin``.
     rotate90: bool
         Rotate the angular origin by 90 degrees counter-clockwise with respect to unit circle origin.
+    crop : list of int, optional
+        ``[row_low, row_high]`` radial rows retained after remapping and
+        binning.  If ``None``, the full radial range is retained.
     polar_header : bool, optional
         If ``True``, also return a WCS-like metadata dictionary describing the
         remapped grid.  Default is ``False``.
@@ -262,12 +244,30 @@ def polar_remap(
 
 def remove_az_gain(cube, ref, rows=None, az_smooth=0.0):
     """
-    Per-frame, per-azimuth flicker g(t, theta), assumed constant along radius.
+    Remove per-frame, per-azimuth gain flicker g(t, theta), assumed constant along radius.
 
-    cube : (n_t, n_r, n_az) polar-remapped frames, NOT standardized.
-    ref: Reference cube or image to divide or subtract from the cube
-    rows : (r0, r1) radial rows used for the estimate (None = all).
-    az_smooth : optional Gaussian sigma (in azimuth bins) to regularize g.
+    The gain is estimated as the median over the radial axis of the ratio
+    ``cube / ref``, optionally smoothed along azimuth, then divided out of
+    the cube.
+
+    Parameters
+    ----------
+    cube : np.ndarray
+        Polar-remapped frames of shape (n_t, n_r, n_az), NOT standardized.
+    ref : np.ndarray
+        Reference cube or image against which the gain g(t, theta) is
+        estimated (e.g. a temporal-median reference cube).
+    rows : (r0, r1), optional
+        Radial rows to use for the gain estimate.  Currently unused: the
+        estimate always runs over all rows.  Default None.
+    az_smooth : float, optional
+        Gaussian sigma (in azimuth bins) used to smooth g along azimuth.
+        Default 0 (no smoothing).
+
+    Returns
+    -------
+    np.ndarray
+        Gain-corrected cube, same shape as ``cube``.
     """
     # ref = median_filter(cube, size=(window, 1, 1), mode="nearest")
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -314,7 +314,9 @@ def preprocess_cube(
     files : list of Path or str
         Sorted list of FITS file paths to process.
     product : str
-        PUNCH data product code passed to :func:`read_fits`.
+        PUNCH data product code of the input files (``'CAM'``, ``'PAM'``,
+        ``'CTM'`` or ``'PTM'``).  For 3-D polarized/total-brightness cubes
+        (PAM/PTM), only the first (total brightness) layer is used.
     polar_nr : int, optional
         Maximum radial extent of the polar remap in pixels.  Required when
         ``do_polar_remap=True``; ignored otherwise.
@@ -346,8 +348,6 @@ def preprocess_cube(
     time_win: tuple, optional
         (start, end) indices (inclusive) of the time slice of interest in the input time series.
         This is useful to not have edge effects from the sliding temporal median
-
-
 
     Returns
     -------
@@ -431,7 +431,8 @@ def preprocess_image(
         Number of azimuthal samples before binning.  Must be divisible by
         ``az_bin``.
     az_bin : int
-        Azimuthal binning factor applied via ``numpy.mean``.
+        Azimuthal binning factor applied by :func:`polar_remap` (anti-alias
+        filter and decimation).
     rotate90: bool
         Rotate the angular origin by 90 degrees counter-clockwise with respect to unit circle origin.
     use_median : bool, optional
@@ -445,12 +446,9 @@ def preprocess_image(
     polar_header : bool, optional
         If ``True``, also return the WCS-like metadata dict from
         :func:`polar_remap`.  Default is ``False``.
-    # despike: bool, optional
-    #     If ``Trie``, will remove star residuals and spiky intensities with local median-based sigma-clipping.
-    # k: int, optional
-    #     multiplier to the local background estimator to select the outliers
-    # ksize: int, optional
-    #     size of the local window of the background estimator
+    despike, ksize, k : optional
+        Reserved for a future despiking step; the despiking code is not
+        implemented yet, so these parameters are currently ignored.
 
     Returns
     -------
@@ -487,9 +485,28 @@ def preprocess_image(
 
 def standardize(image: np.ndarray, use_median: bool = True):
     """
-    Standardize image using either mean or median.
-    When using the median, assuming a normal distribution and disregarding outliers,
-    the image will have zero-mean and rms = 1
+    Standardize each azimuthal row of a polar-remapped image.
+
+    Each row (radial bin) is background-subtracted along the azimuthal axis
+    and divided by its spread, so that every row has comparable zero-centered,
+    unit-scale fluctuations before cross-correlation.
+
+    Parameters
+    ----------
+    image : np.ndarray
+        Polar-remapped image of shape (n_rows, n_cols), where rows are radial
+        bins and columns are azimuth bins.
+    use_median : bool, optional
+        If ``True``, subtract the per-row median and divide by the scaled
+        median absolute deviation (MAD * 1.4826), which is robust to outliers
+        (stars, spikes).  If ``False``, use the mean and standard deviation.
+        Default is ``True``.
+
+    Returns
+    -------
+    np.ndarray
+        Standardized image, same shape as ``image``.  Rows with zero spread
+        are set to NaN.
     """
 
     if use_median:
@@ -512,168 +529,6 @@ def standardize(image: np.ndarray, use_median: bool = True):
     )
 
     return standardized
-
-
-def _col_poly_fit(res, order, n_iter=3, k=3.0):
-    """Robust per-column polynomial fit along the radial axis (axis 0), vectorized."""
-    n_r, n_c = res.shape
-    r = np.linspace(-1.0, 1.0, n_r)
-    V = np.vander(r, order + 1, increasing=True)  # (n_r, p)
-    finite = np.isfinite(res)
-    y = np.where(finite, res, 0.0)
-    w = finite.astype(float)
-    eye = 1e-12 * np.eye(order + 1)
-    with np.errstate(invalid="ignore"), warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
-        for _ in range(n_iter):
-            A = np.einsum('ri,rj,rc->cij', V, V, w) + eye  # (n_c, p, p)
-            b = np.einsum('ri,rc->ci', V, w * y)  # (n_c, p)
-            coef = np.linalg.solve(A, b[..., None])[..., 0]  # (n_c, p)
-            model = V @ coef.T  # (n_r, n_c)
-            dev = np.where(finite, y - model, np.nan)
-            mad = 1.4826 * np.nanmedian(np.abs(dev), axis=0)
-            w = (finite & (np.abs(dev) <= k * mad)).astype(float)  # clip blobs/stars
-    return model
-
-
-def remove_row_col_bias(img, col_order=0, n_iter=3):
-    """
-    Two-way additive decomposition: row(r) + col(theta) + residual.
-    col_order=0 -> median polish (constant per column);
-    col_order>=1 -> robust polynomial in r per column.
-    """
-    res = np.array(img, dtype=float, copy=True)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)  # all-NaN rows/cols
-        for _ in range(n_iter):
-            res -= np.nanmedian(res, axis=1, keepdims=True)  # radial background
-            res_radial = res.copy()
-            if col_order == 0:
-                # continue
-                res -= np.nanmedian(res, axis=0, keepdims=True)  # azimuthal flicker
-
-            else:
-                res -= _col_poly_fit(res, col_order)
-    return res, res_radial
-
-
-def standardize2(image, col_order=0, n_iter=3, mask_zeros=True):
-    """Remove row + column bias in raw units, THEN scale by the per-row robust spread."""
-    img = np.array(image, dtype=float, copy=True)
-    if mask_zeros:
-        img[img == 0] = np.nan  # occulter / out-of-FOV fill from warpPolar
-    res, res_radial = remove_row_col_bias(img, col_order=col_order, n_iter=n_iter)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
-        spread = 1.482602 * np.nanmedian(np.abs(res), axis=1, keepdims=True)
-    ok = np.isfinite(spread) & (spread > 0)
-    return np.divide(res, spread, out=np.full_like(res, np.nan), where=ok), res, res_radial
-
-
-def remove_row_col_bias3(img, median, col_order=0, n_iter=3):
-    """
-    Two-way additive decomposition: row(r) + col(theta) + residual.
-    col_order=0 -> median polish (constant per column);
-    col_order>=1 -> robust polynomial in r per column.
-    """
-    res = np.array(img, dtype=float, copy=True)
-    for _ in range(n_iter):
-        res -= np.median(median, axis=1, keepdims=True)  # radial background
-        res_radial = res.copy()
-        if col_order == 0:
-            # continue
-            res -= np.median(res, axis=0, keepdims=True)  # azimuthal flicker
-
-        else:
-            res -= _col_poly_fit(res, col_order)
-    return res, res_radial
-
-
-def standardize3(image, median, col_order=0, n_iter=3, mask_zeros=True):
-    """Remove row + column bias in raw units, THEN scale by the per-row robust spread."""
-    img = np.array(image, dtype=float, copy=True)
-    if mask_zeros:
-        img[img == 0] = np.nan  # occulter / out-of-FOV fill from warpPolar
-    res, res_radial = remove_row_col_bias3(img, median, col_order=col_order, n_iter=n_iter)
-    spread = 1.482602 * np.nanmedian(np.abs(res), axis=1, keepdims=True)
-    ok = np.isfinite(spread) & (spread > 0)
-    return np.divide(res, spread, out=np.full_like(res, np.nan), where=ok), res, res_radial
-
-
-def subtract_scaled_background(polar_img, polar_bkg, k=3.0, n_iter=3, min_pts=10):
-    """
-    Per-row robust fit polar_img[r] ≈ a_r * polar_bkg[r] + b_r (fit across azimuth),
-    returning the residual. Removes the static pattern even under gain / stray-light drift.
-    """
-    out = np.full_like(polar_img, np.nan, dtype=float)
-    for r in range(polar_img.shape[0]):
-        y, x = polar_img[r], polar_bkg[r]
-        m = np.isfinite(x) & np.isfinite(y)
-        if m.sum() < min_pts:
-            continue
-        keep = m.copy()
-        a, b = 1.0, 0.0
-        for _ in range(n_iter):
-            a, b = np.polyfit(x[keep], y[keep], 1)
-            res = y - (a * x + b)
-            med = np.median(res[keep])
-            s = 1.4826 * np.median(np.abs(res[keep] - med))
-            if s == 0:
-                break
-            new_keep = m & (np.abs(res - med) < k * s)
-            if new_keep.sum() < min_pts:
-                break
-            keep = new_keep
-        # Subtract fitted (scaled) background
-        out[r] = y - (a * x + b)
-    return out
-
-
-def subtract_scaled_background_cols(img, bkg, order=0, k=3.0, n_iter=3, min_pts=10):
-    """
-    Per-column (fixed position angle) robust weighted fit along elongation:
-        img(r) ≈ a(r)*bkg(r) + b(r),  a, b polynomials in r of degree `order`.
-    Rows weighted by 1/s_r (azimuthal robust spread of bkg), which removes the
-    dominance of the bright inner rows without changing the model.
-    order=0 -> constant a_θ, b_θ;  order=1 -> linear radial drift, etc.
-    """
-    n_r, n_c = img.shape
-
-    # Row weights from the median image's azimuthal spread (stable, noise-free)
-    med = np.nanmedian(bkg, axis=1, keepdims=True)
-    s = 1.4826 * np.nanmedian(np.abs(bkg - med), axis=1)
-    w = np.where(s > 0, 1.0 / s, 0.0)
-
-    rr = np.linspace(-1, 1, n_r)
-    P = np.vstack([rr ** p for p in range(order + 1)]).T  # (n_r, order+1)
-
-    out = np.full_like(img, np.nan, dtype=float)
-    for c in range(n_c):
-        y, x = img[:, c], bkg[:, c]
-        m = np.isfinite(x) & np.isfinite(y) & (w > 0)
-        if m.sum() < max(min_pts, 2 * (order + 1) + 2):
-            continue
-
-        X = np.hstack([P * x[:, None], P])  # [a(r)*x, b(r)]
-        Xw, yw = X * w[:, None], y * w
-
-        keep = m.copy()
-        coef = None
-        for _ in range(n_iter):
-            coef, *_ = np.linalg.lstsq(Xw[keep], yw[keep], rcond=None)
-            res = yw - Xw @ coef  # residual in row-std units
-            mres = np.median(res[keep])
-            sig = 1.4826 * np.median(np.abs(res[keep] - mres))
-            if sig == 0:
-                break
-            with np.errstate(invalid="ignore"):
-                new = m & (np.abs(res - mres) < k * sig)
-            if new.sum() < min_pts:
-                break
-            keep = new
-
-        out[:, c] = y - X @ coef
-    return out
 
 
 def max_single_image_shift(n_ofs: int, delta_px: int, central_offset: int) -> int:
@@ -916,13 +771,14 @@ def accumulate_cross_correlation_across_frames(
     num_azimuth_bins : int
         Number of azimuthal samples before binning.
     az_bin : int
-        Azimuthal binning factor applied via ``numpy.mean``.
-    delta_px : int
-        Pixel increment between successive offset samples.
+        Azimuthal binning factor applied by :func:`polar_remap` (anti-alias
+        filter and decimation).
     central_offset : int
         Central pixel offset corresponding to the expected feature displacement.
     product : str
-        PUNCH data product code passed to :func:`read_fits`.
+        PUNCH data product code of the input files (``'CAM'``, ``'PAM'``,
+        ``'CTM'`` or ``'PTM'``).  For 3-D polarized/total-brightness cubes
+        (PAM/PTM), only the first (total brightness) layer is used.
     time_win: tuple, optional
         start and end (inclusive) of the time slice of interest in the input time series.
         This is useful to not have edge effects from the sliding temporal median
@@ -1101,7 +957,47 @@ def process_corr_vel(files: list, preprocess_opts, delta_t, sparsity, n_ofs, pol
                      central_offset, x_kps, offset_speed_kps, vel_bin_width, annuli_crop,
                      speed_max) -> tuple[np.ndarray, np.ndarray]:
     """
-    Process the cross-correlation across frames in a list of FITS files with associated average speeds.
+    Accumulate cross-correlations over a list of FITS files and fit peak speeds per annulus.
+
+    Parameters
+    ----------
+    files : list of Path or str
+        Sorted list of FITS file paths to process.
+    preprocess_opts : dict
+        Keyword options forwarded to
+        :func:`accumulate_cross_correlation_across_frames` (product, time_win,
+        use_median, crop, rotate90, remove_temporal_median, deflicker).
+    delta_t : int
+        Frame offset (in frames) between time-offset image pairs.
+    sparsity : int
+        Step size when iterating over frame pairs.
+    n_ofs : int
+        Number of pixel offsets to sample in the cross-correlation.
+    polar_nr : int
+        Radial size (pixels) of the polar-remapped image.
+    azimuth_bins_remap : int
+        Number of azimuthal samples in the polar-remapped images before binning.
+    az_bin : int
+        Azimuthal binning factor applied by :func:`polar_remap`.
+    central_offset : int
+        Central pixel offset corresponding to the expected displacement.
+    x_kps : np.ndarray
+        Velocity axis in km/s matching the sampled offsets.
+    offset_speed_kps : float
+        Speed below which peaks are ignored when searching for the correlation peak.
+    vel_bin_width : int
+        Bin size over azimuth of the output flow maps.
+    annuli_crop : list
+        Radial row windows (relative to the crop) of each annulus.
+    speed_max : float
+        Maximum velocity to consider in the peak calculation.
+
+    Returns
+    -------
+    speeds : np.ndarray
+        Per-annulus, per-azimuth-bin speeds, shape (n_annuli, flow_az_bins).
+    sigmas : np.ndarray
+        Matching speed uncertainties (robust sigma), same shape as ``speeds``.
     """
 
     acc = accumulate_cross_correlation_across_frames(
@@ -1118,7 +1014,38 @@ def process_corr_vel(files: list, preprocess_opts, delta_t, sparsity, n_ofs, pol
 
 def correl_peak_speed(acc, rows, x_speed, offset_speed, vel_bin_width,
                       speed_max=1000, debug=False):
-    ''' Create the speed map from the correlation array '''
+    """
+    Create the speed map from the time-averaged correlation array for one annulus.
+
+    Parameters
+    ----------
+    acc : tuple of np.ndarray
+        Accumulators (cross and auto terms) from
+        :func:`accumulate_cross_correlation_across_frames`.
+    rows : slice or (start, stop)
+        Radial row window of the annulus.
+    x_speed : np.ndarray
+        Velocity axis in km/s matching the sampled offsets.
+    offset_speed : float
+        Speed below which peaks are ignored when searching for the correlation peak.
+    vel_bin_width : int
+        Bin size over azimuth; must divide evenly the azimuthal axis.
+    speed_max : float, optional
+        Maximum velocity considered in the peak calculation.  Default 1000.
+    debug : bool, optional
+        If ``True``, also return the binned average correlation array.
+        Default False.
+
+    Returns
+    -------
+    rspeed_per_theta : np.ndarray
+        Peak speed per azimuth bin.
+    sigma_per_theta : np.ndarray
+        Matching speed uncertainty per azimuth bin.
+    avcor_rbins_theta : np.ndarray, optional
+        Binned average correlation array, shape (n_ofs, n_az_bins).  Only
+        returned when ``debug=True``.
+    """
 
     if isinstance(rows, slice):
         row_slice = rows
@@ -1152,7 +1079,25 @@ def correl_peak_speed(acc, rows, x_speed, offset_speed, vel_bin_width,
 
 
 def rebin_speeds_sigmas(speeds, new_bin_width):
-    """ Rebin the speeds and calculate MAD-sigma error"""
+    """
+    Rebin the speeds along azimuth and compute a MAD-based uncertainty.
+
+    Parameters
+    ----------
+    speeds : np.ndarray
+        Speeds over one annulus, shape (n_az_bins,), with ``n_az_bins``
+        divisible by ``new_bin_width``.
+    new_bin_width : int
+        Number of original azimuth bins merged into each new bin.
+
+    Returns
+    -------
+    median_speed : np.ndarray
+        Median speed per rebinned azimuth bin, shape (n_az_bins / new_bin_width,).
+    sigmas : np.ndarray
+        Standard error of the median per rebinned bin, estimated from the
+        robust (MAD) spread of the original bins.
+    """
     rspeeds = speeds.reshape(-1, new_bin_width)
     median_speed = np.median(rspeeds, axis=1)
     spread = 1.4826 * np.median(np.abs(rspeeds - median_speed[:, None]), axis=1)  # robust sigma (MAD)
@@ -1162,6 +1107,42 @@ def rebin_speeds_sigmas(speeds, new_bin_width):
 
 
 def find_best_bump1(xspeed, corr, x_min=100, x_max=1000, power=2, n_sigma=3.0, trend_smoothness=0.1):
+    """
+    Locate the most prominent bump of a correlation profile over a speed range.
+
+    A large-sigma Gaussian filter estimates the macro-trend of the profile;
+    subtracting it flattens the slope so that small bumps stand out.  Peaks
+    are found on the flattened signal with a prominence of 1.5 robust-noise
+    sigma, then re-evaluated on the original signal to pick the true maximum.
+    A global speed uncertainty is computed as the weighted spread of the
+    profile above ``n_sigma`` times the noise level.
+
+    Parameters
+    ----------
+    xspeed : np.ndarray
+        Velocity axis in km/s.
+    corr : np.ndarray
+        Correlation profile sampled on ``xspeed``.
+    x_min, x_max : float, optional
+        Speed range over which to search for the bump.  Defaults 100, 1000.
+    power : float, optional
+        Exponent applied to the above-cutoff profile when computing the
+        weighted moments.  Default 2.
+    n_sigma : float, optional
+        Cutoff level, in robust-noise sigma above the 10th-percentile
+        baseline, for the global sigma estimate.  Default 3.0.
+    trend_smoothness : float, optional
+        Fraction of the profile length used as the Gaussian sigma of the
+        macro-trend estimate.  Default 0.1.
+
+    Returns
+    -------
+    best_peak_x : float
+        Speed of the most prominent bump, or NaN when no bump is found.
+    global_sigma : float
+        Global uncertainty (weighted spread) of the bump, or NaN when no
+        signal rises above the cutoff.
+    """
     # 1. Crop to the broad range of interest
     broad_mask = (xspeed >= x_min) & (xspeed <= x_max)
     x_broad = xspeed[broad_mask]
@@ -1177,7 +1158,6 @@ def find_best_bump1(xspeed, corr, x_min=100, x_max=1000, power=2, n_sigma=3.0, t
     if noise_sigma == 0:
         noise_sigma = 1e-6
 
-        # --- THE FIX: Local Background Subtraction ---
     # We use a Gaussian filter with a large sigma to estimate the macro-trend.
     # It acts as a steamroller: perfectly tracking the slope while flattening the bumps.
     # trend_smoothness is a fraction of your window size (10% is usually perfect).
@@ -1221,10 +1201,8 @@ def find_best_bump1(xspeed, corr, x_min=100, x_max=1000, power=2, n_sigma=3.0, t
     return best_peak_x, global_sigma
 
 
-# START OF CLAUDE OPUS 5.5 Solution
-
-
 def _gauss(x, A, mu, s, c):
+    """Gaussian bump with amplitude ``A``, center ``mu``, width ``s`` and offset ``c``."""
     return A * np.exp(-0.5 * ((x - mu) / s) ** 2) + c
 
 
@@ -1233,6 +1211,49 @@ def find_best_bump_v2b(xspeed, corr, x_min=100, x_max=1000,
                        sigma_range=(100, 800),  # generous around your 200-300
                        min_snr_amp=5.0,
                        **kwargs):
+    """
+    Refine the bump estimate with a Gaussian fit, falling back to the bump finder.
+
+    A Gaussian plus a constant is fitted to the profile over [x_min, x_max],
+    with the noise estimated from the profile differences.  The fit is
+    accepted only if the reduced chi-square is below ``chi2_max``, the fitted
+    center lies within the search range, the fitted width lies within
+    ``sigma_range``, and the amplitude is detected above ``min_snr_amp``
+    significance; otherwise the :func:`find_best_bump1` estimate is returned.
+
+    Parameters
+    ----------
+    xspeed : np.ndarray
+        Velocity axis in km/s.
+    corr : np.ndarray
+        Correlation profile sampled on ``xspeed``.
+    x_min, x_max : float, optional
+        Speed range over which to fit.  Defaults 100, 1000.
+    chi2_max : float, optional
+        Maximum reduced chi-square for the fit to be accepted.  Default 2.0.
+    sigma_range : tuple of float, optional
+        Acceptable range for the fitted Gaussian width, in km/s.
+        Default (100, 800).
+    min_snr_amp : float, optional
+        Minimum amplitude signal-to-noise ratio for the fit to be accepted.
+        Default 5.0.
+    **kwargs
+        Extra keyword arguments forwarded to :func:`find_best_bump1`.
+
+    Returns
+    -------
+    speed : float
+        Fitted Gaussian center when the fit is accepted, otherwise the
+        bump-finder peak (NaN when no bump is found).
+    sigma : float
+        Fitted Gaussian width when the fit is accepted, otherwise the
+        bump-finder global sigma (NaN when no bump is found).
+    kind : str
+        ``"gaussian"`` when the fit is accepted, ``"bump"`` otherwise.
+    chi2_red : float
+        Reduced chi-square of the fit, or NaN when the fit could not be
+        performed.
+    """
     bump_x, bump_sig = find_best_bump1(xspeed, corr, x_min, x_max, **kwargs)
 
     m = (xspeed >= x_min) & (xspeed <= x_max)
@@ -1270,133 +1291,25 @@ def find_best_bump_v2b(xspeed, corr, x_min=100, x_max=1000,
     return bump_x, bump_sig, "bump", chi2_red
 
 
-# END OF CLAUDE OPUS 5.5 Solution
 
-
-# ---------------------------------------------------------------------------- #
-# File utilities                                                                #
-# ---------------------------------------------------------------------------- #
-
-
-def group_contiguous_files(files: list, cadence_minutes: int = 8, min_integration_minutes: int = 512) -> tuple:
-    """
-    Group a sorted list of FITS files into temporally contiguous series.
-
-    Consecutive files are placed in the same group as long as the gap between
-    their timestamps does not exceed the expected cadence by more than a fixed
-    tolerance.  A new group begins whenever a larger gap is detected.
-
-    Parameters
-    ----------
-    files : list of Path
-        Sorted list of FITS file ``Path`` objects.  Filenames must contain a
-        14-digit timestamp of the form ``YYYYmmddHHMMSS``.
-    cadence_minutes : int, optional
-        Expected time separation between consecutive files in minutes.
-        Default is 8.
-    min_integration_minutes : int, optional
-        Minimum time to form a valid group. Best if divisible by 8 (PTM cadence is 4 min, CTM is 8 min)
-        Default is 320 minutes (~5.3 hr)
-
-    Returns
-    -------
-    contiguous_groups : list of list of Path
-        Each inner list contains a run of temporally contiguous files.
-    group_lengths : np.ndarray of int
-        Number of files in each contiguous group.
-    """
-    if not files:
-        return [], np.array([], dtype=int)
-
-    def _parse_timestamp(path) -> datetime:
-        match = re.search(r'\d{14}', path.name)
-        if not match:
-            raise ValueError(f"No 14-digit timestamp found in filename: {path.name}")
-        return datetime.strptime(match.group(0), '%Y%m%d%H%M%S')
-
-    expected_cadence = timedelta(minutes=cadence_minutes)
-    tolerance = timedelta(seconds=10)
-
-    contiguous_groups = []
-    current_group = [files[0]]
-    last_time = _parse_timestamp(files[0])
-
-    for current_file in files[1:]:
-        current_time = _parse_timestamp(current_file)
-        if abs(current_time - last_time - expected_cadence) <= tolerance:
-            current_group.append(current_file)
-        else:
-            contiguous_groups.append(current_group)
-            current_group = [current_file]
-        last_time = current_time
-
-    contiguous_groups.append(current_group)
-    # Filter the groups with at least 6 hours of data (45 files)
-    min_contiguous_files = min_integration_minutes / cadence_minutes
-    contiguous_groups = [g for g in contiguous_groups if len(g) >= min_contiguous_files]
-    group_lengths = np.array([len(g) for g in contiguous_groups])
-
-    return contiguous_groups, group_lengths
-
-
-def get_date_from_path(path: Path) -> str:
-    """
-    Extract the timestamp from a PUNCH FITS file path and return a human-readable date/time string.
-
-    Parameters
-    ----------
-    path : pathlib.Path
-        Path to the FITS file containing a 14-digit timestamp (e.g., 'YYYYmmddHHMMSS').
-
-    Returns
-    -------
-    str
-        Human-readable date/time string, e.g., 'YYYY-MM-DD HH:MM:SS'.
-    """
-    match = re.search(r'\d{14}', path.name)
-    if not match:
-        raise ValueError(f"No 14-digit timestamp found in filename: {path.name}")
-
-    dt = datetime.strptime(match.group(0), '%Y%m%d%H%M%S')
-    return dt.strftime('%Y-%m-%d %H:%M:%S')
-
-
-def sector_indices_from_degrees(thetas, sector_deg):
-    """
-    Return the indices of `thetas` covered by an angular sector given in degrees.
-
-    Parameters
-    ----------
-    thetas : np.ndarray
-        Monotonic azimuthal axis in radians, 0 -> 2*pi
-        (e.g. np.linspace(0, 2 * np.pi, N_AZ_BINS + 1)).
-    sector_deg : (float, float) or list of (float, float)
-        Sector(s) to select, as (min, max) angles in degrees.
-        If min > max (e.g. [350, 20]), the sector wraps around 0 degrees.
-
-    Returns
-    -------
-    np.ndarray
-        Sorted integer indices of `thetas` whose angle lies inside the
-        sector, inclusive on both ends.
-    """
-    degs = np.degrees(np.asarray(thetas))
-    tol = 1e-9  # absorbs float roundoff, e.g. degrees(thetas[6]) = 59.99999999999999
-    sectors = sector_deg if np.asarray(sector_deg).ndim == 2 else [sector_deg]
-
-    mask = np.zeros(degs.shape, dtype=bool)
-    for min_deg, max_deg in sectors:
-        min_deg, max_deg = float(min_deg), float(max_deg)
-        if min_deg > max_deg:  # wrap-around across 0 deg
-            mask |= (degs >= min_deg - tol) | (degs <= max_deg + tol)
-        else:
-            mask |= (degs >= min_deg - tol) & (degs <= max_deg + tol)
-
-    return np.where(mask)[0]
-
-
-# Helper function
 def circle_results(vel, sig, thetas):
+    """
+    Close azimuthal circles by appending the first sample at the end.
+
+    Parameters
+    ----------
+    vel, sig : np.ndarray
+        Speeds and uncertainties sampled on the azimuthal axis.
+    thetas : np.ndarray
+        Azimuthal angles (radians) sampled on the same grid.
+
+    Returns
+    -------
+    vel_circle, sig_circle, thetas_circle : np.ndarray
+        The input arrays closed into full circles (first value repeated at
+        the end).  ``thetas`` is only appended when its last value differs
+        from its first.
+    """
     vel_circle = np.append(vel, vel[0])
     sig_circle = np.append(sig, sig[0])
     if thetas[0] != thetas[-1]:
@@ -1425,6 +1338,10 @@ def plot_flow_map(data: PUNCHCube, rebin: int = 10, plot_errors: bool = True, vm
 
         vmax: float, optional
             Maximum velocity to plot on the flow map
+
+        theme: str, optional
+            Matplotlib style sheet applied to the figure.
+            Default 'dark_background'
 
         filename: str, optional
             Output plot filename. If None, the figure is not saved out.
@@ -1489,39 +1406,6 @@ def plot_flow_map(data: PUNCHCube, rebin: int = 10, plot_errors: bool = True, vm
     return fig
 
 
-def plot_az_corrs_36(avcors, speeds, sigmas, x_kps, suptitle=None, x_min=100, x_max=1000, hdu=0):
-    # Plot 36 slices over 9 rows and 4 columns
-
-    fig, axs = plt.subplots(9, 4, figsize=(12, 16))
-
-    plt.suptitle(suptitle)
-
-    for az in range(36):
-
-        azc = az % 4
-        azr = az // 4
-
-        corr_az = avcors[:, az]
-
-        axs[azr, azc].plot(x_kps, corr_az / corr_az.max(), color='tab:blue')
-        axs[azr, azc].set_xlim([-250, 1000])
-        axs[azr, azc].grid(True)
-        axs[azr, azc].axvline(x=speeds[az], ymin=0, ymax=1, color='red', linestyle='-', alpha=0.5,
-                              label=fr'{speeds[az]:1.0f}+/- {sigmas[az]:1.1f} km/s')
-
-        axs[azr, azc].text(0.7, 0.85, fr'$\alpha$ = {az * 10}$^\circ$', transform=axs[azr, azc].transAxes)
-
-        axs[azr, azc].legend(loc='lower right')
-
-        if azr == 8:
-            axs[azr, azc].set_xlabel('Projected speed (km/s)')
-        if azc == 0:
-            axs[azr, azc].set_ylabel(f'X-Corr')
-
-        plt.tight_layout()
-
-    return fig
-
 @punch_flow(log_prints=True, timeout_seconds=21_600)
 def track_velocity(files: list[str] | list[Path],
                    product_code: str,
@@ -1550,7 +1434,10 @@ def track_velocity(files: list[str] | list[Path],
     Parameters
     ----------
     files : list[str]
-        List of file paths for input data
+        List of file paths for input data, in chronological order.  At least
+        ``frames_per_window + 2 * (buffer // 2) + 1`` files are required,
+        where ``buffer`` is computed by :func:`get_buffer` from the product
+        cadence, ``delta_t`` and ``buffer_target_hours``.
 
     product_code: str
         Either 'CAM', 'PAM', 'CTM', or 'PTM'
