@@ -364,7 +364,9 @@ def preprocess_cube(
     for i in range(0, len(files)):
 
         data = load_ndcube_from_fits(files[i])
-        image = data.data
+        if product in ('PAM', 'PTM') and data.ndim >= 3:
+            image = data[0, :, :]
+        else: image = data.data
         header = data.meta.to_fits_header(wcs=data.wcs)
         headers.append(header)
         if do_polar_remap:
