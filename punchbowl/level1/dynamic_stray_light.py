@@ -24,8 +24,6 @@ from punchbowl.util import (
     phase_in_window_from_cube,
 )
 
-fiducial_utime = datetime(2025, 1, 1,  tzinfo=UTC).timestamp() - 4 * 60
-
 
 @punch_flow
 def construct_dynamic_stray_light_model(filepaths: list[str], reference_time: datetime | str, #noqa: C901

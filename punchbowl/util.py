@@ -21,7 +21,6 @@ from scipy.signal import convolve2d
 from punchbowl.data import load_ndcube_from_fits, write_ndcube_to_fits
 from punchbowl.data.punchcube import PUNCHCube
 from punchbowl.exceptions import InvalidDataError, MissingTimezoneWarning
-from punchbowl.level1.dynamic_stray_light import fiducial_utime
 from punchbowl.prefect import punch_task
 
 
@@ -811,6 +810,7 @@ def cube_to_utime(cube: PUNCHCube) -> int:
     t = cube.meta.datetime.replace(tzinfo=UTC)
     return t.timestamp()
 
+fiducial_utime = datetime(2025, 1, 1,  tzinfo=UTC).timestamp() - 4 * 60
 
 def phase_in_window(fname: str) -> int:
     """Get roll position phase."""
