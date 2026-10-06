@@ -112,7 +112,7 @@ test = [
     "pytest-runner",
     "pytest-mpl",
     "pre-commit",
-    "ruff",
+    "ruff==0.16.10",
     "hypothesis",
 
 ]
@@ -125,8 +125,7 @@ test_pipe = [
     "coverage",
     "pytest-cov",
     "pytest-mock-resources[mysql]",
-    "freezegun",
-    "ruff"
+    "freezegun"
 ]
 
 docs = [
@@ -230,7 +229,8 @@ lint.ignore = [
     "TC002",
     "TC003",
     "E731",
-    "EM101"
+    "EM101",
+    "CPY001"
 ]
 
 [tool.ruff.lint.per-file-ignores]

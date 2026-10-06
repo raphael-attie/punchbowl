@@ -27,7 +27,7 @@ from punchbowl.util import average_datetime, interpolate_data
 warnings.filterwarnings("ignore")
 
 
-def polarize_solar_to_celestial(input_data: PUNCHCube, dtype: None | type = None) -> PUNCHCube:
+def polarize_solar_to_celestial(input_data: PUNCHCube, dtype: np.dtype | None = None) -> PUNCHCube:
     """
     Convert polarization from mzpsolar to Celestial frame.
 
@@ -77,7 +77,7 @@ def polarize_solar_to_celestial(input_data: PUNCHCube, dtype: None | type = None
     return output
 
 
-def polarize_celestial_to_solar(input_data: PUNCHCube, dtype: None | type = None) -> PUNCHCube:
+def polarize_celestial_to_solar(input_data: PUNCHCube, dtype: np.dtype | None = None) -> PUNCHCube:
     """
     Convert polarization from Celestial frame to mzpsolar.
 
