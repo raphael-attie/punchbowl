@@ -1,6 +1,10 @@
 """Constant values used in PUNCHBOWL project."""
 from enum import IntEnum
 
+#: Data version: Current data version
+CURRENT_DATA_VERSION = "v0l"
+
+#: punch resolution
 ORIGINAL_PUNCH_RESOLUTION = 2048
 
 # --- NFI processing related -------------------------------------------------------------------------------------------
