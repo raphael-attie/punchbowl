@@ -112,7 +112,7 @@ test = [
     "pytest-runner",
     "pytest-mpl",
     "pre-commit",
-    "ruff",
+    "ruff==0.16.10",
     "hypothesis",
 
 ]
@@ -125,8 +125,7 @@ test_pipe = [
     "coverage",
     "pytest-cov",
     "pytest-mock-resources[mysql]",
-    "freezegun",
-    "ruff"
+    "freezegun"
 ]
 
 docs = [

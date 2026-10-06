@@ -5188,7 +5188,6 @@ test-pipe = [
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "pytest-mock-resources", extra = ["mysql"] },
-    { name = "ruff" },
 ]
 
 [package.metadata]
@@ -5273,7 +5272,7 @@ dev = [
     { name = "pytest-order" },
     { name = "pytest-runner" },
     { name = "pyyaml" },
-    { name = "ruff" },
+    { name = "ruff", specifier = "==0.16.10" },
     { name = "simpunch" },
     { name = "sphinx" },
     { name = "sphinx-autoapi" },
@@ -5345,7 +5344,7 @@ test = [
     { name = "pytest-mpl" },
     { name = "pytest-order" },
     { name = "pytest-runner" },
-    { name = "ruff" },
+    { name = "ruff", specifier = "==0.16.10" },
 ]
 test-pipe = [
     { name = "coverage" },
@@ -5356,7 +5355,6 @@ test-pipe = [
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "pytest-mock-resources", extras = ["mysql"] },
-    { name = "ruff" },
 ]
 
 [[package]]
