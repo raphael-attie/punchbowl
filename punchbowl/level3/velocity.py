@@ -1485,7 +1485,7 @@ def track_velocity(files: list[str] | list[Path],
     reference_time = datetime.fromisoformat(header["DATE-OBS"])
 
     # Get annuli pixel limits, with associated crop coordinates for slicing the radial range of interest
-    cdelt1 = data.wcs.cdelt[0]  # punch wfi native pixel scale in deg/pixel - should be 0.0225 deg/pixel
+    cdelt1 = data.wcs.wcs.cdelt[0]  # punch wfi native pixel scale in deg/pixel - should be 0.0225 deg/pixel
     max_elong_deg = cdelt1 * 2048  # maximum elongation (deg) = 46.08 deg.
     polar_nr = round(max_elong_deg / cdelt1)  # radial axis size (pixels)
     arcsec_per_px = max_elong_deg * 3600 / polar_nr

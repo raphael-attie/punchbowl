@@ -40,10 +40,14 @@ RING_AMPLITUDE = 10.0
 NOISE_LEVEL = 0.2
 IMAGE_SHAPE = (128, 128)
 
+# PUNCH WFI native pixel scale (deg/pixel). Written to the synthetic WCS and read back by track_velocity.
+CDELT_DEG = 0.0225
+
 # track_velocity measures radial speeds in km/s. Its internal conversion is
-# ~81 arcsec/polar-pixel * ~727 km/arcsec = ~58,900 km per polar pixel, and the
+# CDELT_DEG * 3600 = 81 arcsec/polar-pixel * ~727 km/arcsec = ~58,900 km per polar pixel, and the
 # effective time step between correlated frames is CADENCE_MIN * DELTA_T minutes.
-KM_PER_POLAR_PX = 81.0 * (4.84814e-6 * 150e6)
+ARCSEC_PER_POLAR_PX = CDELT_DEG * 3600
+KM_PER_POLAR_PX = ARCSEC_PER_POLAR_PX * (4.84814e-6 * 150e6)
 EFFECTIVE_CADENCE_SEC = CADENCE_MIN * DELTA_T * 60
 EXPECTED_WIND_KPS = int(round(RING_DRIFT_PX * KM_PER_POLAR_PX / EFFECTIVE_CADENCE_SEC))
 
@@ -91,7 +95,7 @@ def _write_synthetic_cube(file_path: str, frame_index: int, obs_time: datetime) 
     wcs = WCS(naxis=2)
     wcs.wcs.ctype = ("HPLN-AZP", "HPLT-AZP")
     wcs.wcs.cunit = ("deg", "deg")
-    wcs.wcs.cdelt = (0.02, 0.02)
+    wcs.wcs.cdelt = (CDELT_DEG, CDELT_DEG)
     wcs.wcs.crpix = (IMAGE_SHAPE[1] // 2, IMAGE_SHAPE[0] // 2)
     wcs.wcs.crval = (0, 24.75)
     wcs.array_shape = data.shape
