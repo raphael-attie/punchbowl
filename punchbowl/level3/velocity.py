@@ -17,7 +17,7 @@ from sunpy.coordinates import sun
 from punchbowl.data import load_ndcube_from_fits
 from punchbowl.data.meta import NormalizedMetadata
 from punchbowl.data.punchcube import PUNCHCube
-from punchbowl.prefect import punch_flow
+from punchbowl.prefect import get_logger, punch_flow
 
 
 def get_buffer(frames_per_window: int, delta_t: int,
@@ -25,6 +25,7 @@ def get_buffer(frames_per_window: int, delta_t: int,
                target_hours: float = 12.0) -> int:
     """
     Get a buffer time for a temporal average over at least the number of hours defined by target_hours.
+
     It outputs the number of additional frames so that (FRAMES_PER_WINDOW + buffer) covers
     at least `target_hours` of observation time, given the product cadence
     (TCADENCE_MIN) and the stride DELTA_T. Result is always >= frames_per_window.
@@ -72,7 +73,8 @@ def get_buffer(frames_per_window: int, delta_t: int,
 def get_annulus(ycen_band_rs: float, r_band_width: float,
                 arcsec_per_px: float, rs_arcsec: float) -> np.ndarray:
     """
-    Calculate an annuli defined by its center and radial width to pixel indices of the inner and outer edge
+    Convert an annulus, defined by its center and radial width, to pixel indices of its inner and outer edges.
+
     Works only for polar-remapped image with center of transformation at sun center, with its origin at the
     bottom of the horizontal axis.
 
@@ -90,7 +92,7 @@ def get_annulus(ycen_band_rs: float, r_band_width: float,
     Returns
     -------
     ndarray
-        ``[lower_index, upper_index]`` pixel coordinates of lower and outter edge of the annuli.
+        ``[lower_index, upper_index]`` pixel coordinates of lower and outer edge of the annuli.
         Guaranteed to span at least one pixel.
 
     """
@@ -151,7 +153,7 @@ def polar_remap(
         num_azimuth_bins: int,
         az_bin: int,
         rotate90: bool = False,
-        crop: list = None,
+        crop: list | None = None,
         polar_header: bool = False,
 ) -> np.ndarray | tuple:
     """
@@ -213,7 +215,7 @@ def polar_remap(
     sigma = az_bin / 2.0
     filtered_polar = gaussian_filter1d(polar_image, sigma=sigma, axis=0, mode="wrap")
 
-    # Decimate (binning) and transposte
+    # Decimate by binning, then transpose
     # Resulting Shape: (polar_nr, num_azimuth_bins // az_bin)
     polar_image_binned = filtered_polar[::az_bin, :].T
 
@@ -246,7 +248,7 @@ def polar_remap(
     return polar_image_binned, polar_meta
 
 
-def remove_az_gain(cube, ref, rows=None, az_smooth=0.0):
+def remove_az_gain(cube: np.ndarray, ref: np.ndarray, az_smooth: float = 0.0) -> np.ndarray:
     """
     Remove per-frame, per-azimuth gain flicker g(t, theta), assumed constant along radius.
 
@@ -261,9 +263,6 @@ def remove_az_gain(cube, ref, rows=None, az_smooth=0.0):
     ref : np.ndarray
         Reference cube or image against which the gain g(t, theta) is
         estimated (e.g. a temporal-median reference cube).
-    rows : (r0, r1), optional
-        Radial rows to use for the gain estimate.  Currently unused: the
-        estimate always runs over all rows.  Default None.
     az_smooth : float, optional
         Gaussian sigma (in azimuth bins) used to smooth g along azimuth.
         Default 0 (no smoothing).
@@ -274,7 +273,6 @@ def remove_az_gain(cube, ref, rows=None, az_smooth=0.0):
         Gain-corrected cube, same shape as ``cube``.
 
     """
-    # ref = median_filter(cube, size=(window, 1, 1), mode="nearest")
     with np.errstate(divide="ignore", invalid="ignore"):
         q = cube / ref
     q = np.where(np.isfinite(q), q, np.nan)  # masks 0/0 outside the FOV
@@ -288,17 +286,16 @@ def remove_az_gain(cube, ref, rows=None, az_smooth=0.0):
 def preprocess_cube(
         files: list,
         product: str,
-        polar_nr: int = None,
-        num_azimuth_bins: int = None,
+        polar_nr: int | None = None,
+        num_azimuth_bins: int | None = None,
         az_bin: int = 1,
         rotate90: bool = False,
-        crop: list = None,
-        hdu: int = 1,
+        crop: list | None = None,
         do_polar_remap: bool = True,
         deflicker: bool = False,
         az_smooth: float = 10.0,
         remove_temporal_median: bool = False,
-        time_win: list = None,
+        time_win: list | None = None,
 ) -> tuple:
     """
     Load a time series of FITS frames into a single preprocessed cube.
@@ -336,8 +333,6 @@ def preprocess_cube(
         ``[row_low, row_high]`` radial crop applied after remapping, e.g. the
         margin-padded ``effective_crop`` from :func:`accumulate_cross_correlation_across_frames`.
         Default None.
-    hdu : int, optional
-        Index of the HDU holding the science data.  Default 1.
     do_polar_remap : bool, optional
         If True, polar-remap each frame; set False for already-remapped files.
     deflicker: bool, optional
@@ -347,7 +342,7 @@ def preprocess_cube(
         Gaussian sigma (azimuth bins) regularizing the gain g(t, theta).
         Default 10.
     remove_temporal_median: bool, optional
-        If True: will substract the median of the cube. If Deflicker is applied, the median runs
+        If True: will subtract the median of the cube. If Deflicker is applied, the median runs
         after it.
         Default False
     time_win: tuple, optional
@@ -369,10 +364,7 @@ def preprocess_cube(
     headers = []
     for i in range(len(files)):
         data = load_ndcube_from_fits(files[i])
-        if product in ("PAM", "PTM") and data.data.ndim >= 3:
-            image = data.data[0, :, :]
-        else:
-            image = data.data
+        image = data.data[0, :, :] if product in ("PAM", "PTM") and data.data.ndim >= 3 else data.data
         header = data.meta.to_fits_header(wcs=data.wcs)
         headers.append(header)
         if do_polar_remap:
@@ -411,11 +403,8 @@ def preprocess_image(
         use_median: bool = True,
         rotate90: bool = False,
         do_polar_remap: bool = True,
-        crop: list = None,
+        crop: list | None = None,
         polar_header: bool = False,
-        despike: bool = False,
-        ksize: int = 21,
-        k: int = 5,
 ) -> np.ndarray | tuple:
     """
     Polar-remap a FITS image and apply background subtraction and normalization.
@@ -452,9 +441,6 @@ def preprocess_image(
     polar_header : bool, optional
         If ``True``, also return the WCS-like metadata dict from
         :func:`polar_remap`.  Default is ``False``.
-    despike, ksize, k : optional
-        Reserved for a future despiking step; the despiking code is not
-        implemented yet, so these parameters are currently ignored.
 
     Returns
     -------
@@ -466,11 +452,6 @@ def preprocess_image(
         ``polar_header=True``.
 
     """
-    # if despike:
-    #     from despike import despike_polar
-    #     print('Despiking...')
-    #     image = despike_polar(image, ksize=ksize, k=k, method="sep1d", hampel=True)
-
     if do_polar_remap:
         result = polar_remap(image, header, polar_nr, num_azimuth_bins, az_bin, rotate90=rotate90, crop=crop,
                              polar_header=polar_header)
@@ -489,7 +470,7 @@ def preprocess_image(
     return processed_image
 
 
-def standardize(image: np.ndarray, use_median: bool = True):
+def standardize(image: np.ndarray, use_median: bool = True) -> np.ndarray:
     """
     Standardize each azimuthal row of a polar-remapped image.
 
@@ -529,12 +510,10 @@ def standardize(image: np.ndarray, use_median: bool = True):
         processed = image - bkg
         spread = np.std(processed, axis=1, keepdims=True)
 
-        # Avoid zero-division warnings by using np.divide with the 'where' mask
-    standardized = np.divide(
+    # Avoid zero-division warnings by using np.divide with the 'where' mask
+    return np.divide(
         processed, spread, out=np.full_like(processed, np.nan), where=(spread != 0),
     )
-
-    return standardized
 
 
 def max_single_image_shift(n_ofs: int, delta_px: int, central_offset: int) -> int:
@@ -569,7 +548,7 @@ def max_single_image_shift(n_ofs: int, delta_px: int, central_offset: int) -> in
 # Cross-correlation                                                             #
 # ---------------------------------------------------------------------------- #
 
-def _shift_rows(arr: np.ndarray, shift: int, fill=None) -> np.ndarray:
+def _shift_rows(arr: np.ndarray, shift: int, fill: bool | float | None = None) -> np.ndarray:
     """
     Shift an array along axis=0 such that ``out[i] == arr[i - shift]``.
 
@@ -599,8 +578,7 @@ def _shift_rows(arr: np.ndarray, shift: int, fill=None) -> np.ndarray:
     if shift == 0:
         return arr
 
-    pad_kw = dict(mode="edge") if fill is None else dict(mode="constant",
-                                                         constant_values=fill)
+    pad_kw = {"mode": "edge"} if fill is None else {"mode": "constant", "constant_values": fill}
     if shift > 0:
         return np.pad(arr, ((shift, 0), (0, 0)), **pad_kw)[:n, :]
     return np.pad(arr, ((0, -shift), (0, 0)), **pad_kw)[-shift:n - shift, :]
@@ -655,8 +633,7 @@ def calculate_cross_correlation(
         k: float = 4.0,
 ) -> tuple:
     """
-    Centered pairwise cross-correlation between two preprocessed polar images
-    over a range of radial pixel offsets.
+    Centered pairwise cross-correlation between two preprocessed polar images over a range of radial pixel offsets.
 
     At each offset the total displacement is split symmetrically: ``image1`` is
     shifted outward by half and ``image2`` inward by the other half.  Each
@@ -748,17 +725,16 @@ def accumulate_cross_correlation_across_frames(
         central_offset: int,
         product: str,
         delta_px: int = 1,
-        time_win: list = None,
+        time_win: list | None = None,
         use_median: bool = True,
-        crop: list = None,
+        crop: list | None = None,
         crop_margin: int = 0,
         rotate90: bool = False,
         az_smooth: int = 10,
         do_polar_remap: bool = True,
         deflicker: bool = False,
         remove_temporal_median: bool = False,
-        hdu=1,
-) -> np.ndarray:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Accumulate pairwise cross-correlations over a sequence of FITS image frames.
 
@@ -811,20 +787,19 @@ def accumulate_cross_correlation_across_frames(
         at every offset (no edge-replication contamination).  Ignored when
         ``crop`` is ``None``.  Default is 0.
     rotate90: bool
-    During pre-preprocessing, rotate the angular origin by 90 degrees counter-clockwise with respect to unit circle origin.
+        During preprocessing, rotate the angular origin by 90 degrees counter-clockwise with respect to the
+        unit circle origin.
     do_polar_remap: bool
         If True, will apply polar remapping before tracking. If the images are already polar-remapped, set it to False.
     deflicker: bool, optional
         If True, will compensate for time-azimuthal gain changes by dividing an estimate based on
         base difference and smoothed radial average.
     remove_temporal_median: bool, optional
-        If True: will substract the median of the cube. If Deflicker is applied, the median runs
+        If True: will subtract the median of the cube. If Deflicker is applied, the median runs
         after it.
         Default False
     az_smooth: int
         Will apply some smoothing over the azimuth gain.
-    hdu: int
-        position of the header data unit in the FITS files holding the data. Default to 1 for RICE-COMPRESSED FITS
 
     Returns
     -------
@@ -840,8 +815,10 @@ def accumulate_cross_correlation_across_frames(
         (``centered_b ** 2``), same shape as ``acc_crossp``.
 
     """
+    logger = get_logger()
+
     if crop is not None and crop_margin > 0:
-        if crop[0] < crop_margin or crop[1] + crop_margin > int(round(polar_nr)):
+        if crop[0] < crop_margin or crop[1] + crop_margin > round(polar_nr):
             raise ValueError(
                 f"crop {crop} with crop_margin {crop_margin} exceeds the "
                 f"available radial extent [0, {polar_nr - 1}]; "
@@ -855,7 +832,7 @@ def accumulate_cross_correlation_across_frames(
 
     # Load the full cube once: polar remap + azimuthal gain (flicker) removal
     cube, headers = preprocess_cube(
-        files, product=product, hdu=hdu,
+        files, product=product,
         polar_nr=polar_nr, num_azimuth_bins=num_azimuth_bins, az_bin=az_bin,
         rotate90=rotate90, crop=effective_crop,
         do_polar_remap=do_polar_remap, az_smooth=az_smooth, time_win=time_win,
@@ -874,7 +851,7 @@ def accumulate_cross_correlation_across_frames(
 
     # If time_win not None, i=0 is relative to whatever time_win is.
     for i in range(0, len(cube) - delta_t, sparsity):
-        print(f"Frame {i} vs frame {i + delta_t}")
+        logger.info(f"Frame {i} vs frame {i + delta_t}")
         prepped1 = standardize(cube[i], use_median=use_median)
         prepped2 = standardize(cube[i + delta_t], use_median=use_median)
 
@@ -891,10 +868,9 @@ def accumulate_cross_correlation_across_frames(
             # are NaN at every row (exactly what makes nanmedian warn).
             bad1 = np.flatnonzero(np.isnan(prepped1).all(axis=0))
             bad2 = np.flatnonzero(np.isnan(prepped2).all(axis=0))
-            print(f"Pair i={i} (cube frames {i} vs {i + delta_t}: "
-                  f"{headers[i]['DATE-OBS']} -> {headers[i + delta_t]['DATE-OBS']}) -> {e}\n"
-                  f"    all-NaN columns: frame {i}: {bad1.size}, frame {i + delta_t}: {bad2.size}")
-            print(prepped1.shape)
+            logger.warning(f"Pair i={i} (cube frames {i} vs {i + delta_t}: "
+                           f"{headers[i]['DATE-OBS']} -> {headers[i + delta_t]['DATE-OBS']}) -> {e}\n"
+                           f"    all-NaN columns: frame {i}: {bad1.size}, frame {i + delta_t}: {bad2.size}")
 
             # The escalation aborted this pair's computation, so redo it with
             # the warning suppressed to keep the accumulator correct.
@@ -916,11 +892,12 @@ def accumulate_cross_correlation_across_frames(
     return acc_crossp, acc_auto1, acc_auto2
 
 
-def pearson_from_acc(acc_crossp, acc_auto1, acc_auto2,
-                     rows=None, cols=None):
+def pearson_from_acc(acc_crossp: np.ndarray, acc_auto1: np.ndarray, acc_auto2: np.ndarray,
+                     rows: slice | tuple | None = None, cols: slice | tuple | None = None) -> np.ndarray:
     """
-    Combine time-averaged per-pixel cross/auto products into per-column
-    Pearson correlation coefficients, shape (n_ofs, n_cols).
+    Combine time-averaged per-pixel cross/auto products into per-column Pearson correlation coefficients.
+
+    The output has shape (n_ofs, n_cols).
 
     Parameters
     ----------
@@ -956,10 +933,7 @@ def pearson_from_acc(acc_crossp, acc_auto1, acc_auto2,
 
         return np.divide(num, den, out=np.full_like(num, np.nan), where=(den > 0))
 
-    if isinstance(cols, slice):
-        cols_slice = cols
-    else:
-        cols_slice = slice(*cols)
+    cols_slice = cols if isinstance(cols, slice) else slice(*cols)
 
     num = acc_crossp[:, row_slice, cols_slice].sum(axis=2).sum(axis=1)
     den = np.sqrt(acc_auto1[:, row_slice, cols_slice].sum(axis=2).sum(axis=1)
@@ -968,9 +942,10 @@ def pearson_from_acc(acc_crossp, acc_auto1, acc_auto2,
     return np.divide(num, den, out=np.full_like(num, np.nan), where=(den > 0))
 
 
-def process_corr_vel(files: list, preprocess_opts, delta_t, sparsity, n_ofs, polar_nr, azimuth_bins_remap, az_bin,
-                     central_offset, x_kps, offset_speed_kps, vel_bin_width, annuli_crop,
-                     speed_max, delta_px: int = 1) -> tuple[np.ndarray, np.ndarray]:
+def process_corr_vel(files: list, preprocess_opts: dict, delta_t: int, sparsity: int, n_ofs: int, polar_nr: int,
+                     azimuth_bins_remap: int, az_bin: int, central_offset: int, x_kps: np.ndarray,
+                     offset_speed_kps: float, vel_bin_width: int, annuli_crop: list,
+                     speed_max: float, delta_px: int = 1) -> tuple[np.ndarray, np.ndarray]:
     """
     Accumulate cross-correlations over a list of FITS files and fit peak speeds per annulus.
 
@@ -1026,13 +1001,14 @@ def process_corr_vel(files: list, preprocess_opts, delta_t, sparsity, n_ofs, pol
 
     # Loop over the annuli
     speeds, sigmas = zip(*[correl_peak_speed(acc, a_crop, x_kps, offset_speed_kps, vel_bin_width,
-                                             speed_max=speed_max) for a_crop in annuli_crop])
+                                             speed_max=speed_max) for a_crop in annuli_crop],
+                         strict=True)
 
     return np.stack(speeds), np.stack(sigmas)
 
 
-def correl_peak_speed(acc, rows, x_speed, offset_speed, vel_bin_width,
-                      speed_max=1000, debug=False):
+def correl_peak_speed(acc: tuple, rows: slice | tuple, x_speed: np.ndarray, offset_speed: float, vel_bin_width: int,
+                      speed_max: float = 1000, debug: bool = False) -> tuple:
     """
     Create the speed map from the time-averaged correlation array for one annulus.
 
@@ -1066,10 +1042,7 @@ def correl_peak_speed(acc, rows, x_speed, offset_speed, vel_bin_width,
         returned when ``debug=True``.
 
     """
-    if isinstance(rows, slice):
-        row_slice = rows
-    else:
-        row_slice = slice(*rows)
+    row_slice = rows if isinstance(rows, slice) else slice(*rows)
 
     # Average correlation signal over the selected annuli
     acc_k = pearson_from_acc(*acc, rows=row_slice)
@@ -1082,11 +1055,9 @@ def correl_peak_speed(acc, rows, x_speed, offset_speed, vel_bin_width,
     rspeed_per_theta = []
     sigma_per_theta = []
     for i in range(n_az_bins):
-        # argmax = avcor_rbins_theta[spike_offset_idx:, :, i].argmax(axis=0) + spike_offset_idx
         acc = avcor_rbins_theta[:, i]
         # V2
-        rbest, sigma, kind, chi2_red = find_best_bump_v2b(x_speed, acc, x_min=offset_speed, x_max=speed_max,
-                                                          chi2_max=3.5)
+        rbest, sigma, *_ = find_best_bump_v2b(x_speed, acc, x_min=offset_speed, x_max=speed_max, chi2_max=3.5)
 
         rspeed_per_theta.append(rbest)
         sigma_per_theta.append(sigma)
@@ -1097,7 +1068,7 @@ def correl_peak_speed(acc, rows, x_speed, offset_speed, vel_bin_width,
     return np.array(rspeed_per_theta), np.array(sigma_per_theta)
 
 
-def rebin_speeds_sigmas(speeds, new_bin_width):
+def rebin_speeds_sigmas(speeds: np.ndarray, new_bin_width: int) -> tuple[np.ndarray, np.ndarray]:
     """
     Rebin the speeds along azimuth and compute a MAD-based uncertainty.
 
@@ -1126,7 +1097,8 @@ def rebin_speeds_sigmas(speeds, new_bin_width):
     return median_speed, sigmas
 
 
-def find_best_bump1(xspeed, corr, x_min=100, x_max=1000, power=2, n_sigma=3.0, trend_smoothness=0.1):
+def find_best_bump1(xspeed: np.ndarray, corr: np.ndarray, x_min: float = 100, x_max: float = 1000,
+                    power: float = 2, n_sigma: float = 3.0, trend_smoothness: float = 0.1) -> tuple[float, float]:
     """
     Locate the most prominent bump of a correlation profile over a speed range.
 
@@ -1222,16 +1194,16 @@ def find_best_bump1(xspeed, corr, x_min=100, x_max=1000, power=2, n_sigma=3.0, t
     return best_peak_x, global_sigma
 
 
-def _gauss(x, A, mu, s, c):
-    """Gaussian bump with amplitude ``A``, center ``mu``, width ``s`` and offset ``c``."""
-    return A * np.exp(-0.5 * ((x - mu) / s) ** 2) + c
+def _gauss(x: np.ndarray, amp: float, mu: float, s: float, c: float) -> np.ndarray:
+    """Gaussian bump with amplitude ``amp``, center ``mu``, width ``s`` and offset ``c``."""
+    return amp * np.exp(-0.5 * ((x - mu) / s) ** 2) + c
 
 
-def find_best_bump_v2b(xspeed, corr, x_min=100, x_max=1000,
-                       chi2_max=2.0,  # calibrate on your data (see note)
-                       sigma_range=(100, 800),  # generous around your 200-300
-                       min_snr_amp=5.0,
-                       **kwargs):
+def find_best_bump_v2b(xspeed: np.ndarray, corr: np.ndarray, x_min: float = 100, x_max: float = 1000,
+                       chi2_max: float = 2.0,  # calibrate on your data (see note)
+                       sigma_range: tuple[float, float] = (100, 800),  # generous around your 200-300
+                       min_snr_amp: float = 5.0,
+                       **kwargs: float) -> tuple[float, float, str, float]:
     """
     Refine the bump estimate with a Gaussian fit, falling back to the bump finder.
 
@@ -1299,14 +1271,14 @@ def find_best_bump_v2b(xspeed, corr, x_min=100, x_max=1000,
     except (RuntimeError, ValueError):
         return bump_x, bump_sig, "bump", np.nan
 
-    A, mu, s, c = popt
-    eA = np.sqrt(pcov[0, 0])
+    amp, mu, s, _ = popt
+    amp_err = np.sqrt(pcov[0, 0])
     chi2_red = np.sum(((y - _gauss(x, *popt)) / noise) ** 2) / (len(x) - 4)
 
     is_gauss = (chi2_red < chi2_max
                 and x_min <= mu <= x_max
                 and sigma_range[0] <= s <= sigma_range[1]
-                and A / eA > min_snr_amp)
+                and amp / amp_err > min_snr_amp)
 
     if is_gauss:
         return mu, s, "gaussian", chi2_red  # or np.sqrt(pcov[1,1]) if you want the error on mu
@@ -1314,7 +1286,7 @@ def find_best_bump_v2b(xspeed, corr, x_min=100, x_max=1000,
 
 
 
-def circle_results(vel, sig, thetas):
+def circle_results(vel: np.ndarray, sig: np.ndarray, thetas: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Close azimuthal circles by appending the first sample at the end.
 
@@ -1335,15 +1307,12 @@ def circle_results(vel, sig, thetas):
     """
     vel_circle = np.append(vel, vel[0])
     sig_circle = np.append(sig, sig[0])
-    if thetas[0] != thetas[-1]:
-        thetas_circle = np.append(thetas, thetas[0])
-    else:
-        thetas_circle = thetas
+    thetas_circle = np.append(thetas, thetas[0]) if thetas[0] != thetas[-1] else thetas
     return vel_circle, sig_circle, thetas_circle
 
 
-def plot_flow_map(data: PUNCHCube, rebin: int = 10, plot_errors: bool = True, vmax=800, theme="dark_background",
-                  filename=None):
+def plot_flow_map(data: PUNCHCube, rebin: int = 10, plot_errors: bool = True, vmax: float = 800,
+                  theme: str = "dark_background", filename: str | None = None) -> plt.Figure:
     """
     Plot polar maps of the radial flows.
 
@@ -1381,7 +1350,7 @@ def plot_flow_map(data: PUNCHCube, rebin: int = 10, plot_errors: bool = True, vm
     if rebin > 1:
         if speeds.shape[1] % rebin != 0:
             raise ValueError("rebin must divide evenly the input azimuth size")
-        speeds, sigmas = zip(*[rebin_speeds_sigmas(s, rebin) for s in data.data])
+        speeds, sigmas = zip(*[rebin_speeds_sigmas(s, rebin) for s in data.data], strict=True)
         speeds = np.array(speeds)
         sigmas = np.array(sigmas)
 
@@ -1400,8 +1369,6 @@ def plot_flow_map(data: PUNCHCube, rebin: int = 10, plot_errors: bool = True, vm
     for i, center in enumerate(band_centers_rs[0:4]):  # up to 4 bands. Ignore the rest if more
         speed_annulus, sigma_annulus, thetas = circle_results(speeds[i], sigmas[i], thetas)
         annulus = [int(center - band_width_rs / 2), int(center + band_width_rs / 2)]
-        print(band_width_rs)
-        print(annulus)
         ax.plot(thetas, speed_annulus, color=colors[i], ls="-", label=f"{annulus[0]} --> {annulus[1]} Rs")
         if plot_errors:
             ax.fill_between(thetas, speed_annulus - sigma_annulus, speed_annulus + sigma_annulus, alpha=0.2,
@@ -1443,7 +1410,7 @@ def track_velocity(files: list[str] | list[Path],
                    azimuth_bins_remap: int = 5760,
                    az_bin: int = 4,
                    vel_bin_width: int=4,
-                   speed_max=1000,
+                   speed_max: float = 1000,
                    buffer_target_hours: int=12,
                    use_median: bool = True,
                    rotate90: bool = True,
@@ -1573,7 +1540,9 @@ def track_velocity(files: list[str] | list[Path],
     # the time slice should typically start at 0, unless punchbowl streams files differently.
     file_first = 0
     file_last = tend + buffer // 2
-    # slice in the list of files that is required to make the temporal average background. the flow map integration window is centered in that timeline. to illustrate: with ta = temporal average of background, ft = flow time window:
+    # Slice in the list of files required to make the temporal average background. The flow map integration
+    # window is centered in that timeline. To illustrate, with ta = temporal average of background and
+    # ft = flow time window:
     # [ta start......ft start......ft end.......ta end]
     file_slice = slice(file_first, file_last + 1)  # file_last inclusive
     # number of expected files
@@ -1603,7 +1572,7 @@ def track_velocity(files: list[str] | list[Path],
     annuli = [get_annulus(center, annuli_width_rs, arcsec_per_px, rs_arcsec) for center in annuli_centers_rs]
     annuli_crop = [a - annuli[0][0] for a in annuli]
 
-    # For the polar-remmapped cropped image
+    # For the polar-remapped cropped image
     r_low = min(a[0] for a in annuli)
     r_high = max(a[1] for a in annuli)
 
@@ -1613,18 +1582,18 @@ def track_velocity(files: list[str] | list[Path],
     central_offset = int(expected_displacement_px)
     _, x_kps = build_velocity_axis(n_ofs, central_offset, expected_wind_kps, delta_px=delta_px)
 
-    # Wrap up inputs for preprecossing
-    preprocess_opts = dict(
-        product=product_code,
-        time_win=(tstart, tend),
-        use_median=use_median,
-        crop=[r_low, r_high],
-        rotate90=rotate90,
-        remove_temporal_median=remove_temporal_median,
-        deflicker=deflicker,
-    )
+    # Wrap up inputs for preprocessing
+    preprocess_opts = {
+        "product": product_code,
+        "time_win": (tstart, tend),
+        "use_median": use_median,
+        "crop": [r_low, r_high],
+        "rotate90": rotate90,
+        "remove_temporal_median": remove_temporal_median,
+        "deflicker": deflicker,
+    }
 
-    speeds, sigmas = process_corr_vel(files, preprocess_opts, delta_t, sparsity, n_ofs, polar_nr,
+    speeds, sigmas = process_corr_vel(subset_files, preprocess_opts, delta_t, sparsity, n_ofs, polar_nr,
                                          azimuth_bins_remap, az_bin, central_offset, x_kps, offset_speed_kps,
                                          vel_bin_width, annuli_crop, speed_max, delta_px=delta_px)
 
@@ -1651,7 +1620,7 @@ def track_velocity(files: list[str] | list[Path],
     output_meta["DELTA_PX"] = delta_px
     output_meta["KPSEXP"] = expected_wind_kps
     output_meta["BANDWDTH"] = annuli_width_rs
-    output_meta["MAXRAD"] = int(round(max_elong_deg))
+    output_meta["MAXRAD"] = round(max_elong_deg)
     output_meta["AZMBINS"] = azimuth_bins_remap
     output_meta["AZMBINF"] = az_bin
     output_meta["PLTBINS"] = flow_az_bins
@@ -1661,10 +1630,7 @@ def track_velocity(files: list[str] | list[Path],
     # avg_speeds has shape (n_annuli, flow_az_bins): numpy axis 0 = radius (annulus
     # index), axis 1 = azimuth.  FITS/WCS axes are reversed relative to numpy axes,
     # so WCS axis 1 (fastest-varying) = azimuth, WCS axis 2 = radius.
-    if len(annuli_centers_rs) > 1:
-        cdelt_radius = float(np.mean(np.diff(annuli_centers_rs)))
-    else:
-        cdelt_radius = annuli_width_rs
+    cdelt_radius = float(np.mean(np.diff(annuli_centers_rs))) if len(annuli_centers_rs) > 1 else annuli_width_rs
 
     wcs = WCS(naxis=2)
     wcs.wcs.ctype = "azimuth", "radius"
