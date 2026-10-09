@@ -300,8 +300,7 @@ def preprocess_cube(
     """
     Load a time series of FITS frames into a single preprocessed cube.
 
-    Each frame is read and, optionally, polar-remapped with the same geometry
-    options used by :func:`preprocess_image`.  Frames are stacked into a cube
+    Each frame is read and, optionally, polar-remapped. Frames are stacked into a cube
     of shape (n_t, n_rows, n_cols) and corrected for the per-frame,
     per-azimuth gain flicker g(t, theta) (assumed constant along radius)
     estimated against the temporal-median reference via :func:`remove_az_gain`.
@@ -392,82 +391,6 @@ def preprocess_cube(
     headers = headers[time_win[0]:time_win[1] + 1]
 
     return cube, headers
-
-
-def preprocess_image(
-        image: np.ndarray,
-        header: fits.header.Header,
-        polar_nr: int,
-        num_azimuth_bins: int,
-        az_bin: int,
-        use_median: bool = True,
-        rotate90: bool = False,
-        do_polar_remap: bool = True,
-        crop: list | None = None,
-        polar_header: bool = False,
-) -> np.ndarray | tuple:
-    """
-    Polar-remap a FITS image and apply background subtraction and normalization.
-
-    The background is estimated along the azimuthal axis (axis=1 of the remapped
-    image).  Subtracting it removes the slowly-varying radial gradient; dividing
-    by the per-row RMS equalizes pixel variances across elongations before
-    cross-correlation.
-
-    Parameters
-    ----------
-    image : np.ndarray
-        Input FITS image array.
-    header : fits.header.Header
-        FITS header providing the image reference pixel coordinates.
-    polar_nr : int
-        Maximum radial extent for the polar remap in pixels.
-    num_azimuth_bins : int
-        Number of azimuthal samples before binning.  Must be divisible by
-        ``az_bin``.
-    az_bin : int
-        Azimuthal binning factor applied by :func:`polar_remap` (anti-alias
-        filter and decimation).
-    rotate90: bool
-        Rotate the angular origin by 90 degrees counter-clockwise with respect to unit circle origin.
-    use_median : bool, optional
-        Use the median (``True``) or mean (``False``) when estimating the
-        background and RMS.  Default is ``True``.
-    do_polar_remap: bool, optional
-        If True, will polar remap the image
-    crop : list of int, optional
-        ``[row_low, row_high]`` pixel indices applied to the radial axis after
-        remapping.  If ``None``, the full radial range is retained.
-    polar_header : bool, optional
-        If ``True``, also return the WCS-like metadata dict from
-        :func:`polar_remap`.  Default is ``False``.
-
-    Returns
-    -------
-    processed_image : np.ndarray
-        Background-subtracted (and optionally RMS-normalized) polar-remapped
-        image.  Non-finite values arising from division by zero are set to NaN.
-    polar_meta : dict
-        WCS-like metadata from :func:`polar_remap`.  Only returned when
-        ``polar_header=True``.
-
-    """
-    if do_polar_remap:
-        result = polar_remap(image, header, polar_nr, num_azimuth_bins, az_bin, rotate90=rotate90, crop=crop,
-                             polar_header=polar_header)
-        if polar_header:
-            polar_image_binned, polar_meta = result
-        else:
-            polar_image_binned = result
-    else:
-        polar_image_binned = image.copy()
-
-    processed_image = standardize(polar_image_binned, use_median=use_median)
-
-    if polar_header and do_polar_remap:
-        return processed_image, polar_meta
-
-    return processed_image
 
 
 def standardize(image: np.ndarray, use_median: bool = True) -> np.ndarray:
@@ -1562,7 +1485,7 @@ def track_velocity(files: list[str] | list[Path],
     reference_time = datetime.fromisoformat(header["DATE-OBS"])
 
     # Get annuli pixel limits, with associated crop coordinates for slicing the radial range of interest
-    cdelt1 = 0.0225  # punch wfi native pixel scale in deg/pixel
+    cdelt1 = data.wcs.cdelt[0]  # punch wfi native pixel scale in deg/pixel - should be 0.0225 deg/pixel
     max_elong_deg = cdelt1 * 2048  # maximum elongation (deg) = 46.08 deg.
     polar_nr = round(max_elong_deg / cdelt1)  # radial axis size (pixels)
     arcsec_per_px = max_elong_deg * 3600 / polar_nr
