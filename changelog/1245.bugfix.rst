@@ -1,1 +1,1 @@
-Flips RA coordinate cdelt in starfield model subtraction.
+Flips RA coordinate cdelt in starfield model generation.
