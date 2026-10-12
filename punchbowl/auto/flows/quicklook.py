@@ -383,14 +383,15 @@ def quicklook_process_flow(flow_id: int, pipeline_config_path=None, session=None
         if quicklook_results:
             quicklook_entry = quicklook_results[0]
         else:
-            quicklook_entry = Quicklook(day=day, level=level, code=code)
+            quicklook_entry = Quicklook(day=day, level=level, code=code,
+                                        image_made=False, movie_made=False)
 
-        quicklook_entry.image_made = make_image
+        if make_image:
+            quicklook_entry.image_made = True
+
         if make_movie:
             quicklook_entry.movie_made = True
             quicklook_entry.movie_nfile = nfiles
-        else:
-            quicklook_entry.movie_made = False
 
        # Add the entry to the database if the results were empty because we haven't seen this date
         if len(quicklook_results) == 0:
