@@ -138,24 +138,34 @@ def test_levelq_CNN_query_ready_files(db):
                     date_created=t - timedelta(days=1),
                     file_id=i + 1000)
         files.append(file)
+        # We'll be generating a large number of File objects as we go through this loop. Most of them will be
+        # "normal" files that will all be added to the database. Some specific files will be special in order to
+        # create different scenarios to be tested (e.g. a missing file, or an already-processed file), so they get
+        # picked out by these conditionals for that special handling. See below for a diagram of what the final set
+        # of files looks like.
+
+        # These conditionals grab files that should *not* go in the DB, to create various gaps.
         if i == 198:
             final_gap_file1 = file
         elif i == 197:
             final_gap_file2 = file
-        elif i == 50:
-            mid_gap_file1 = file
+        elif i == 100:
+            other_missing_neighbor_file = file
+        elif i == 70:
+            missing_neighbor_file = file
         elif i == 51:
+            mid_gap_file1 = file
+        elif i == 50:
             mid_gap_file1 = file
         elif i == 20:
             ok_gap_file = file
-        elif i == 70:
-            missing_neighbor_file = file
-        elif i == 100:
-            other_missing_neighbor_file = file
         else:
+            # Every file that gets here will be put in the DB.
             if i in (71, 99):
+                # These are freshly-created files
                 file.date_created = datetime.now()
             if i == 60:
+                # This one will have a FileRelationship, so it appears as an input that's already been processed
                 already_processed_file = file
                 child_file = File(level="Q",
                     file_type="QN",
