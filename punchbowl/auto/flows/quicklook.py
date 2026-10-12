@@ -240,6 +240,7 @@ def quicklook_core_flow(file_list: list,
             path_movie_tb = os.path.join(output_quicklook_dir, f"PUNCH_{cube.meta["TYPECODE"].value}{cube.meta["OBSCODE"].value}_tB_{cube.meta.datetime.strftime("%Y%m%d")}_v{cube.meta["FILEVRSN"].value}.mp4")
             path_movie_pb = os.path.join(output_quicklook_dir, f"PUNCH_{cube.meta["TYPECODE"].value}{cube.meta["OBSCODE"].value}_pB_{cube.meta.datetime.strftime("%Y%m%d")}_v{cube.meta["FILEVRSN"].value}.mp4")
             os.makedirs(os.path.dirname(path_movie_tb), exist_ok=True)
+            os.makedirs(os.path.dirname(path_movie_pb), exist_ok=True)
             animate_punch(file_list, layer=0, output_path=path_movie_tb, fps=framerate, n_jobs=12, vmin=vmin_tb, vmax=vmax_tb, title_prefix=title_prefix_tb, ffmpeg_path=ffmpeg_command)
             animate_punch(file_list, layer=1, output_path=path_movie_pb, fps=framerate, n_jobs=12, vmin=vmin_pb, vmax=vmax_pb, title_prefix=title_prefix_pb, ffmpeg_path=ffmpeg_command)
 
