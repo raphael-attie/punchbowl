@@ -25,6 +25,8 @@ from punchbowl.levelq.flow import levelq_CQM_core_flow, levelq_CTM_core_flow, le
 from punchbowl.prefect import get_logger
 from punchbowl.util import average_datetime
 
+minutes_to_seconds = 60
+
 
 @task(cache_policy=NO_CACHE)
 def levelq_QNN_query_ready_files(session, pipeline_config: dict, reference_time=None, max_n=9e99):
@@ -62,7 +64,7 @@ def levelq_QNN_query_ready_files(session, pipeline_config: dict, reference_time=
 
     batch_size_cap = pipeline_config['flows']['levelq_QNN']['batch_size_cap']
     n_batches_to_schedule = pipeline_config['flows']['levelq_QNN']['n_batches_to_schedule']
-    max_gap_seconds = pipeline_config['flows']['levelq_QNN']['max_gap_minutes'] * 60
+    max_gap_seconds = pipeline_config['flows']['levelq_QNN']['max_gap_minutes'] * minutes_to_seconds
     median_window = pipeline_config['flows']['levelq_QNN']['median_window']
     median_margin = median_window // 2
     zfilter_margin = pipeline_config['flows']['levelq_QNN']['zfilter_margin']
@@ -93,7 +95,8 @@ def levelq_QNN_query_ready_files(session, pipeline_config: dict, reference_time=
 
     logger.info(f"{len(grouped_files)} groups")
 
-    files_is_new_cutoff = datetime.now() - timedelta(minutes=15)
+    wait_for_files_minutes = pipeline_config['flows']['levelq_QNN']['wait_for_files_minutes']
+    files_is_new_cutoff = datetime.now() - timedelta(minutes=wait_for_files_minutes)
 
     # Now we're gonna split up the groups further. We'll define a "very new" file as anything written to disk in the
     # last N minutes. If we find a gap of even a single frame that neighbors a very-new file, it's very likely that
@@ -103,7 +106,9 @@ def levelq_QNN_query_ready_files(session, pipeline_config: dict, reference_time=
     for group in grouped_files:
         times = np.array([f.date_obs.timestamp() for f in group])
         intervals = np.abs(np.diff(times))
-        gap = intervals > 10 * 60
+        # In normal circumstances, we have an image every 8 minutes. Set a slightly larger window to account for any
+        # wobble in the imaging sequence.
+        gap = intervals > 10 * minutes_to_seconds
         missing_later_neighbor = np.concatenate(([0], gap))
         missing_earlier_neighbor = np.concatenate((gap, [0]))
         missing_neighbor = missing_earlier_neighbor + missing_later_neighbor
@@ -161,8 +166,10 @@ def levelq_QNN_query_ready_files(session, pipeline_config: dict, reference_time=
         dateobses = [f.date_obs for f in group]
         dstart = min(dateobses)
         dend = max(dateobses)
+        # A few extra seconds to add to each window, in case the imaging sequence drifts slightly
         sequence_wobble = 10
-        cadence = 8 * 60
+        cadence = 8 * minutes_to_seconds
+        # We'll allow for a few missing images in the margin window
         allowed_gaps = 2
         margin_before = timedelta(seconds=cadence * (allowed_gaps + median_margin + zfilter_margin) + sequence_wobble)
         margin_after = timedelta(seconds=cadence * (allowed_gaps + median_margin) + sequence_wobble)
