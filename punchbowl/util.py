@@ -403,7 +403,35 @@ def stack_images(images: np.ndarray, masks: np.ndarray, z_filter_index: float = 
 def interpolate_data(data_before: PUNCHCube, data_after:PUNCHCube, reference_time: datetime, # noqa: C901
                      time_key: str = "DATE-OBS", allow_extrapolation: bool = False, and_uncertainty: bool = False,
                      infill_nans: bool = False) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
-    """Interpolates between two data objects."""
+    """
+    Interpolates between two data objects.
+
+    Parameters
+    ----------
+    data_before : PUNCHCube
+        The "before" image to interpolate from
+    data_after : PUNCHCube
+        The "after" image to interpolate from
+    reference_time : datetime
+        The time at which to interpolate
+    time_key : str
+        Which header key to use from `data_before` and `data_after` when interpolating
+    allow_extrapolation : bool
+        Whether to allow extrapolation, or to fail if `reference_time` does not fall between the times of the two cubes
+    and_uncertainty : bool
+        Whether to also interpolate the uncertainty arrays of the input cubes
+    infill_nans : bool
+        If True, for any pixels that are NaN in one of the two images, the output value will be the pixel value in the
+        other cube. If False, NaNs propagate through.
+
+    Returns
+    -------
+    data_interpolated : np.ndarray
+        The interpolated image
+    uncert_interpolated : np.ndarray
+        The interpolated uncertainty. Returned only if `and_uncertainty` is True.
+
+    """
     before_date = parse_datetime(data_before.meta[time_key].value + " UTC").timestamp()
     after_date = parse_datetime(data_after.meta[time_key].value + " UTC").timestamp()
     if reference_time.tzinfo is None:
