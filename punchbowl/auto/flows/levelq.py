@@ -28,6 +28,31 @@ from punchbowl.util import average_datetime
 
 @task(cache_policy=NO_CACHE)
 def levelq_QNN_query_ready_files(session, pipeline_config: dict, reference_time=None, max_n=9e99):
+    """
+    Query for run-able PCA batches.
+
+    Waiting L1 XR4 files are collected from the DB. The FileRelationships table is used to exclude XR4s that have
+    already gone through QuickPUNCH. The ready files are divided into nearly-contiguous groups (with a tolerance for
+    a few missing images at a time). Groups are then augmented with "context" images that have already been PCA
+    filtered, to support the temporal filtering we apply to QNN outputs. Finally, each group is matched with PCA
+    components, instrument-frame and sky-frame backgrounds, all produced by the science-pipeline PCA flow.
+
+    Parameters
+    ----------
+    session : Session
+        Database session
+    pipeline_config : dict
+        Pipeline configuration dictionary
+    reference_time : datetime
+        Not used
+    max_n : float, optional
+        Not used
+
+    Returns
+    -------
+    list
+        Groups of ready files, one group per intended flow run
+    """
     logger = get_logger()
     pending_flows = session.query(Flow).filter(Flow.flow_type == "levelq_QNN").filter(
         Flow.state.in_(["planned", "launched", "running"])).all()
@@ -232,7 +257,29 @@ def get_closest_stray_light(session, f: File) -> File | None:
 
 
 @task(cache_policy=NO_CACHE)
-def levelq_QNN_construct_flow_info(level1_files: list[File], levelq_file: File, pipeline_config: dict, session=None, reference_time=None):
+def levelq_QNN_construct_flow_info(level1_files: list[File], levelq_files: list[File], pipeline_config: dict,
+                                   session=None, reference_time=None):
+    """
+       Construct `Flow` object for a flow run.
+
+       Parameters
+       ----------
+       level1_files : list[File]
+           Input files for a flow run
+       levelq_files : list[File]
+           Output files for a flow run
+       pipeline_config : dict
+           Pipeline configuration settings
+       session : Session, optional
+           Database session
+       reference_time : datetime
+           Not used
+
+       Returns
+       -------
+       Flow
+           The constructed `Flow` object
+       """
     flow_type = "levelq_QNN"
     state = "planned"
     creation_time = datetime.now()
@@ -268,6 +315,23 @@ def levelq_QNN_construct_flow_info(level1_files: list[File], levelq_file: File, 
 
 @task
 def levelq_QNN_construct_file_info(level1_files: list[File], pipeline_config: dict, reference_time=None) -> list[File]:
+    """
+    Construct output `File` object for a flow run.
+
+    Parameters
+    ----------
+    level1_files : list[File]
+        Input files used for flow run
+    pipeline_config : dict
+        Pipeline configuration settings
+    reference_time : datetime
+        Not used
+
+    Returns
+    -------
+    list[File]
+        List of output `File` objects for a flow run
+    """
     output_files = []
     for file in level1_files:
         if file._to_filter:
@@ -287,12 +351,42 @@ def levelq_QNN_construct_file_info(level1_files: list[File], pipeline_config: di
 
 
 def levelq_QNN_relationship_generator(parent_files: list[File], child_files: list[File]) -> Generator:
+    """
+    Generate file relationships for a flow run.
+
+    Used because the mapping between parent and child files is more complex than usual, since we make individual
+    outputs only for the non-context files.
+
+    Parameters
+    ----------
+    parent_files : list[File]
+        Input files for the flow run
+    child_files : list[File]
+        Output files for the flow run
+
+    Returns
+    -------
+    Generator
+        A generator that yields (parent, child) tuples
+    """
     files_to_filter = [f for f in parent_files if f._to_filter]
     yield from zip(files_to_filter, child_files)
 
 
 @flow
 def levelq_QNN_scheduler_flow(pipeline_config_path=None, session=None, reference_time=None):
+    """
+    Schedule flow runs.
+
+    Parameters
+    ----------
+    pipeline_config_path : str
+        Path to pipeline configuration settings
+    session : Session
+        Database session
+    reference_time : datetime
+        Not used
+    """
     generic_scheduler_flow_logic(
         levelq_QNN_query_ready_files,
         levelq_QNN_construct_file_info,
@@ -306,6 +400,23 @@ def levelq_QNN_scheduler_flow(pipeline_config_path=None, session=None, reference
 
 
 def levelq_QNN_call_data_processor(call_data: dict, pipeline_config, session) -> dict:
+    """
+    Pre-process call data for a flow run, right before running.
+
+    Parameters
+    ----------
+    call_data : dict
+        Call data
+    pipeline_config : dict
+        Pipeline configuration settings
+    session : Session, optional
+        Not used
+
+    Returns
+    -------
+    dict
+        Processed call data
+    """
     # Prepend the data root to each input file
     for key in ["input_files", "context_files", "nfi_mask", "instrument_frame_background",
                 "first_helio_frame_background", "second_helio_frame_background", "pca_components"]:
@@ -316,6 +427,18 @@ def levelq_QNN_call_data_processor(call_data: dict, pipeline_config, session) ->
 
 @flow
 def levelq_QNN_process_flow(flow_id: int | list[int], pipeline_config_path=None, session=None):
+    """
+    Run an individual flow run.
+
+    Parameters
+    ----------
+    flow_id : int
+        Flow ID number
+    pipeline_config_path : str, optional
+        Path to pipeline configuration settings
+    session : Session, optional
+        Database session
+    """
     generic_process_flow_logic(flow_id, levelq_qnn_core_flow, pipeline_config_path, session=session,
                                call_data_processor=levelq_QNN_call_data_processor, write_in_parallel=True,
                                require_expected_files=False)
