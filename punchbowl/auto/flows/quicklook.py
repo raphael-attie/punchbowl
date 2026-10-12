@@ -143,7 +143,7 @@ def visualize_flow_info(input_files: list[File],
             "code": task_item["code"],
             "make_image": task_item["make_image"],
             "make_movie": task_item["make_movie"],
-            "output_movie_dir": out_path,
+            "output_quicklook_dir": out_path,
             "framerate": framerate,
             "resolution": resolution,
             "ffmpeg_cmd": pipeline_config["flows"]["quicklook"]["options"].get("ffmpeg_cmd", "ffmpeg"),
@@ -356,11 +356,11 @@ def quicklook_process_flow(flow_id: int, pipeline_config_path=None, session=None
     make_movie = flow_call_data["make_movie"]
 
     flow_call_data["file_list"] = file_name_to_full_path(flow_call_data["file_list"], pipeline_config["root"])
-    flow_call_data["output_movie_dir"] = os.path.join(pipeline_config["ql_root"], flow_call_data["output_movie_dir"])
+    flow_call_data["output_quicklook_dir"] = os.path.join(pipeline_config["ql_root"], flow_call_data["output_quicklook_dir"])
 
     try:
         quicklook_core_flow(file_list=flow_call_data["file_list"],
-                            output_movie_dir=flow_call_data["output_movie_dir"],
+                            output_quicklook_dir=flow_call_data["output_quicklook_dir"],
                             make_image=make_image,
                             make_movie=make_movie,
                             framerate=flow_call_data["framerate"],
