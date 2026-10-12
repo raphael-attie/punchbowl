@@ -17,7 +17,7 @@ KEYWORD_OMIT = ("COMMENT", "HISTORY", "", "NAXIS3", "OBSTYPE", "OBS-MODE", "OBSL
 @punch_task
 def create_low_noise_task(
         cubes: list[PUNCHCube],
-        nfi_cubes: list[PUNCHCube] | None,
+        nfi_cubes: list[PUNCHCube] | None = None,
         reference_time: str | datetime | None = None,
         exclude_outliers: bool = True,
         nfi_wfi_divide_radius: float | None = None,
