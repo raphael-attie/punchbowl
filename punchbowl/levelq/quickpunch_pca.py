@@ -10,10 +10,16 @@ from astropy.nddata import StdDevUncertainty
 from punchbowl.data import NormalizedMetadata, load_ndcube_from_fits
 from punchbowl.data.meta import check_moon_in_fov
 from punchbowl.data.punchcube import PUNCHCube
-from punchbowl.level1.dynamic_stray_light import phase_in_day
 from punchbowl.level2 import nfi_pca
 from punchbowl.prefect import get_logger, punch_task
-from punchbowl.util import ShmPickleableNDArray, interpolate_data, load_mask_file, nan_percentile_window, stack_images
+from punchbowl.util import (
+    ShmPickleableNDArray,
+    interpolate_data,
+    load_mask_file,
+    nan_percentile_window,
+    phase_in_day,
+    stack_images,
+)
 
 
 @punch_task
