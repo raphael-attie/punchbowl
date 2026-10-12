@@ -221,7 +221,33 @@ def level3_core_flow(data_list: list[str | PUNCHCube],
                      nfi_wfi_divide_radius: float | None,
                      nfi_scale_factor: float = 1,
                      output_filename: str | None = None) -> list[PUNCHCube]:
-    """Level 3 CTM flow."""
+    """
+    Level 3 CTM/PTM flow.
+
+    Parameters
+    ----------
+    data_list : list[str | PUNCHCube]
+        The input data files---*IMs to process into *TMs
+    nfi_list : list[str | PUNCHCube | None]
+        NFI files, if any, to insert in the mosaics.
+    before_starfield_path : str | None
+        The path to a starfield model before the observations
+    after_starfield_path : str | None
+        The path to a starfield model after the observations
+    nfi_wfi_divide_radius : float
+        A radius in pixels that divides the NFI region of the final mosiac from the WFI region. If not provided, there
+        will be no NFI region.
+    nfi_scale_factor : float
+        An ad-hoc scale factor to apply to the NFI pixel values.
+    output_filename : str | None
+        A location at which to save the output file
+
+    Returns
+    -------
+    out_data_list : list[PUNCHCube]
+        The *TM cubes produced by this flow
+
+    """
     logger = get_logger()
 
     logger.info("beginning level 3 flow")
