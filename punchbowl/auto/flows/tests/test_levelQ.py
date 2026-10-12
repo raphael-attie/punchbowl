@@ -122,6 +122,7 @@ def test_levelq_CNN_query_ready_files(db):
                                                 "n_batches_to_schedule": 1,
                                                 "max_gap_minutes": 17,
                                                 "median_window": 5,
+                                                "wait_for_files_minutes": 15,
                                                 "zfilter_margin": 4,
                                                 "only_last_n_days": 10}}}
     t0 = datetime.now() - timedelta(days=5)
