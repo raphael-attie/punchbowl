@@ -130,7 +130,7 @@ def test_that_pca_filter_runs(tmpdir):
         np.packbits(np.isfinite(mask).T).tofile(f)
 
     with prefect.logging.disable_run_logger():
-        quickpunch_pca_filter.fn(
+       output_cubes = quickpunch_pca_filter.fn(
             input_files=image_paths,
             context_files=[],
             nfi_mask=None,
@@ -144,3 +144,7 @@ def test_that_pca_filter_runs(tmpdir):
             n_workers=1,
             n_loaders=1,
         )
+    assert len(output_cubes) == 7
+    assert all(cube.meta['TYPECODE'].value == 'QN' for cube in output_cubes)
+    assert all(cube.meta['OBSCODE'].value == 'N' for cube in output_cubes)
+    assert all(cube.meta['LEVEL'].value == 'Q' for cube in output_cubes)
