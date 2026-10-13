@@ -25,7 +25,7 @@ from punchbowl.util import (
 @punch_task
 def quickpunch_pca_filter(input_files: list[str],
                           context_files: list[str],
-                          nfi_mask: str,
+                          nfi_mask: str | None,
                           pca_components_path: str,
                           instrument_frame_background_path: str,
                           first_helio_frame_background_path: str,
@@ -61,8 +61,8 @@ def quickpunch_pca_filter(input_files: list[str],
         The input files to load
     context_files : list[str]
         The context files to use
-    nfi_mask : str
-        The path to the NFI mask
+    nfi_mask : str | None
+        The path to the NFI mask. If None, no mask is used.
     pca_components_path : str
         The path to the PCA components file
     instrument_frame_background_path : str
@@ -117,7 +117,7 @@ def quickpunch_pca_filter(input_files: list[str],
 
         phases = np.array([phase_in_day(path) for path in loaded_files])
 
-        nfi_mask = load_mask_file(nfi_mask)
+        nfi_mask = load_mask_file(nfi_mask) if nfi_mask is not None else np.ones(x_cube[0].shape)
         nfi_mask_ds = nfi_mask.reshape((x_cube.shape[1] // downsample_factor, downsample_factor,
                                         x_cube.shape[2] // downsample_factor, downsample_factor)).all(axis=(1, 3))
 
@@ -217,7 +217,7 @@ def quickpunch_pca_filter(input_files: list[str],
                             and key in new_meta):
                         new_meta[key] = metas[i][key].value
                 _, _, _, _, moondist, xpix, ypix = check_moon_in_fov(
-                    metas[i]["DATE-OBS"].value, wcs=wcses[i], image_shape=output_array[i].shape)
+                    metas[i]["DATE-OBS"].value, wcs=cwcses[i], image_shape=output_array[i].shape)
                 new_meta["MOONDIST"] = moondist[0]
                 new_meta["MOON_X"] = xpix[0]
                 new_meta["MOON_Y"] = ypix[0]
