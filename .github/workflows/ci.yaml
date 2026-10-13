@@ -54,7 +54,6 @@ jobs:
     - name: Test with pytest
       run: |
         NUMBA_DISABLE_JIT=1 uv run --no-sources pytest --cov=punchbowl/ --cov-report=xml
-        coverage combine
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v7
       env:
