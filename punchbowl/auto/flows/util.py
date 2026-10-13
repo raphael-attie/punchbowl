@@ -33,6 +33,24 @@ def summarize_files_missing_cal_files(files: list[File]):
 
 
 def pick_closest_file(files: list[File], target_file: File, max_difference: timedelta | None = None) -> File | None:
+    """
+    Pick from a list of files the one closest to a target file.
+
+    Parameters
+    ----------
+    files : list[File]
+        The files to choose from
+    target_file : File
+        The file from which "closest to" is measured
+    max_difference : timedelta | None
+        The maximum allowed difference between the closest file and the target file. If set and the closest file exceeds
+        this separation, None will be returned.
+
+    Returns
+    -------
+    File | None
+        The closest file
+    """
     if not files:
         return None
     files = sorted(files, key=lambda f: abs(f.date_obs - target_file.date_obs))
