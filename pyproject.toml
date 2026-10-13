@@ -198,6 +198,9 @@ omit = [
     "**/test_*.py",
     "**/*test.py",
 ]
+# Capture coverage from parallel processes
+parallel = true
+concurrency = ["multiprocessing"]
 
 [tool.ruff]
 target-version = 'py311'
