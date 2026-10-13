@@ -374,7 +374,7 @@ def _load_one_file(path: str, downsample_factor: int,
     """
     if not os.path.exists(path):
         return "missing"
-    cube = load_ndcube_from_fits(path, include_uncertainty=False, include_provenance=False, dtype=np.float32)
+    cube = load_ndcube_from_fits(path, include_uncertainty=True, include_provenance=False, dtype=np.float32)
     if cube.meta["BADPKTS"].value or cube.meta["DATAP25"].value > too_bright_threshold:
         return None
 
@@ -424,8 +424,10 @@ def load_files(files: list[str], n_workers: int, downsample_factor: int,
     wcses = []
     celestial_wcses = []
     loaded_paths = []
-    x_cube = ShmPickleableNDArray((len(files), 2048, 2048), dtype=np.float32)
-    saturation_mask_cube = ShmPickleableNDArray((len(files), 2048 // downsample_factor, 2048 // downsample_factor),
+    sample_cube = load_ndcube_from_fits(files[0], include_provenance=False, include_uncertainty=False)
+    x_cube = ShmPickleableNDArray((len(files), *sample_cube.shape), dtype=np.float32)
+    saturation_mask_cube = ShmPickleableNDArray((len(files), sample_cube.shape[0] // downsample_factor,
+                                                 sample_cube.shape[1] // downsample_factor),
                                                 dtype=bool)
     i = 0
     n_missing = 0
@@ -711,8 +713,7 @@ def build_models_with_existing_components(
         pass
     pca_components = pca_components.reshape(shape)
     smoothed_components = smoothed_components.reshape(shape)
-
-    for _ in process_pool.map(_make_one_model_from_components, phases, repeat(pca_components),
+    for _ in process_pool.map(_make_one_model_from_components, x_cube_filled, phases, repeat(pca_components),
                               repeat(smoothed_components), dsls, repeat(nfi_mask)):
         # Loop is necessary for any exceptions from workers to be raised
         pass

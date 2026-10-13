@@ -130,7 +130,7 @@ def quickpunch_pca_filter(input_files: list[str],
         logger.info("Images loaded")
 
         x_cube_ds_filled, plot_masks = nfi_pca.fill_problem_regions(
-            x_cube_downsampled, metas, cwcses, sat_mask_cube, nfi_mask_ds, downsample_factor, process_pool)
+            x_cube_downsampled, metas, cwcses, sat_mask_cube, downsample_factor, process_pool)
 
         x_cube_downsampled.free()
         sat_mask_cube.free()
@@ -138,7 +138,7 @@ def quickpunch_pca_filter(input_files: list[str],
 
         logger.info("Problem regions filled")
 
-        good_mask = nfi_pca.find_outliers_with_PCA(x_cube_ds_filled, np.ones(len(x_cube), dtype=bool), nfi_mask_ds,
+        good_mask = nfi_pca.find_outliers_with_pca(x_cube_ds_filled, np.ones(len(x_cube), dtype=bool), nfi_mask_ds,
                                                    n_workers)
         x_cube = ShmPickleableNDArray.from_array(x_cube[good_mask])
         x_cube_ds_filled = ShmPickleableNDArray.from_array(x_cube_ds_filled[good_mask])

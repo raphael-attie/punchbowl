@@ -380,7 +380,7 @@ def stack_images(images: np.ndarray, masks: np.ndarray, z_filter_index: float = 
     out_array[0] = images[0] * masks[0]
     np.nan_to_num(out_array[0], copy=False)
     for i in numba.prange(out_array.shape[1]):
-        for j, (image, mask) in enumerate(zip(images[1:, i], masks[1:, i], strict=True)):
+        for j, (image, mask) in enumerate(zip(images[1:, i], masks[1:, i])): # noqa: B905
             j += 1 # noqa: PLW2901
             for k in range(len(image)):
                 mval = mask[k] * z_filter_index
