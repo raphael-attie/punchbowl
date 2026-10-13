@@ -89,6 +89,8 @@ def generate_mask():
     mask = np.ones((test_image_size, test_image_size))
     return mask
 
+
+@pytest.mark.skipif(sys.version_info < (3, 13), reason="Requires Python 3.13 or higher")
 def test_that_pca_filter_runs(tmpdir):
     components = generate_components()
     images = generate_images(components)
