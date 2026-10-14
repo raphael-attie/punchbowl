@@ -45,7 +45,7 @@ def model_fcorona_for_cube(cube: np.ndarray) -> np.ndarray:
         Nothing
 
     """
-    return nan_percentile(cube, 3)
+    return nan_percentile(cube, 2)
 
 
 def fill_nans_with_interpolation(image: np.ndarray) -> np.ndarray:
