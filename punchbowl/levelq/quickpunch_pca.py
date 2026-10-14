@@ -217,7 +217,7 @@ def quickpunch_pca_filter(input_files: list[str],
                             and key in new_meta):
                         new_meta[key] = metas[i][key].value
                 _, _, _, _, moondist, xpix, ypix = check_moon_in_fov(
-                    metas[i]["DATE-OBS"].value, wcs=cwcses[i], image_shape=output_array[i].shape)
+                    metas[i]["DATE-OBS"].value, wcs=wcses[i], image_shape=output_array[i].shape)
                 new_meta["MOONDIST"] = moondist[0]
                 new_meta["MOON_X"] = xpix[0]
                 new_meta["MOON_Y"] = ypix[0]
