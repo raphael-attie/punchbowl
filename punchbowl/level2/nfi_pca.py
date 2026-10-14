@@ -35,8 +35,9 @@ from punchbowl.util import (
 
 
 @punch_task
-def pca_filter(input_files: list[str], context_files: list[str], nfi_mask: str, ref_date: str, n_components: int = 100,
-               n_strides: int = 8, downsample_factor: int = 2, n_loaders: int = 4, n_workers: int = 20,
+def pca_filter(input_files: list[str], context_files: list[str], nfi_mask: str | None, ref_date: str,
+               n_components: int = 100, n_strides: int = 8, downsample_factor: int = 2, n_loaders: int = 4,
+               n_workers: int = 20,
                ) -> list[PUNCHCube]:
     """
     Run PCA-based NFI filtering.
@@ -96,8 +97,8 @@ def pca_filter(input_files: list[str], context_files: list[str], nfi_mask: str, 
         The files to be filtered
     context_files : list[str]
         The files to be used for PCA fitting but which don't need to be filtered
-    nfi_mask : str
-        Path to a NFI mask file
+    nfi_mask : str | None
+        The path to the NFI mask. If None, no mask is used.
     ref_date : str
         The date to use for the PCA components
     n_components : int
@@ -131,7 +132,7 @@ def pca_filter(input_files: list[str], context_files: list[str], nfi_mask: str, 
 
         phases = np.array([phase_in_day(path) for path in loaded_paths])
 
-        nfi_mask = load_mask_file(nfi_mask)
+        nfi_mask = load_mask_file(nfi_mask) if nfi_mask is not None else np.ones(x_cube[0].shape)
         nfi_mask_downsampled = nfi_mask.reshape((x_cube.shape[1] // downsample_factor, downsample_factor,
                                                  x_cube.shape[2] // downsample_factor, downsample_factor),
                                                 ).all(axis=(1, 3))
@@ -190,9 +191,6 @@ def pca_filter(input_files: list[str], context_files: list[str], nfi_mask: str, 
         logger.info("Images reprojected")
 
         corrected_frames = do_sinusoid_filtering(oriented_images, metas, nfi_mask, process_pool)
-
-        oriented_images.free()
-        del oriented_images
 
         logger.info("Sinusoidal trends removed")
 
@@ -754,7 +752,11 @@ def _do_pca_filtering_one_stride(this_set_number: int, n_sets: int, x_cube_fille
                                  dsl_dest: np.ndarray, component_dest: np.ndarray, nfi_mask: np.ndarray,
                                  phases: np.ndarray, n_components: int, n_threads: int) -> None:
     phases = (phases - this_set_number) % n_sets
-    fit_idxs = (phases != 0) * (phases != 1) * (phases != n_sets - 1) * good_mask
+    if n_sets < 5:
+        # We can't afford to exclude the neighbors of excluded images, or we'll exclude everything
+        fit_idxs = (phases != 0) * good_mask
+    else:
+        fit_idxs = (phases != 0) * (phases != 1) * (phases != n_sets - 1) * good_mask
     set_to_fit = x_cube_filled[fit_idxs][:, nfi_mask]
 
     filter_idxs = phases == 0
