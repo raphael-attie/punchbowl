@@ -65,7 +65,7 @@ super_user = [
     "numexpr >= 2.10.0, <= 2.14.2",
     "pre-commit >= 4.6.0, <= 4.7.0",
     "prefect[dask] >= 3.7.4, <= 3.8.8",
-    "pylibjpeg[libjpeg,openjpeg] >= 2.0.1, <=2.0.1",
+    "imagecodecs[all] >= 2026.8.16, <= 2026.10.10",
     "remove_starfield==0.1.1",
     "reproject >=0.20.0, <= 0.21.0",
     "scikit-image >= 0.25.2, <= 0.26.0",
@@ -197,6 +197,9 @@ omit = [
     "**/test_*.py",
     "**/*test.py",
 ]
+# Capture coverage from parallel processes
+parallel = true
+concurrency = ["multiprocessing"]
 
 [tool.ruff]
 target-version = 'py311'
