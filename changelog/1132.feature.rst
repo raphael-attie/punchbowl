@@ -1,1 +1,0 @@
-Implements daily quicklook movies and images.

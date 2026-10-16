@@ -20,7 +20,7 @@ dependencies = [
     "regularizepsf == 1.2.1",
     "requests >= 2.30.0, <= 2.34.2",
     "scipy >= 1.16.1, <= 1.18.1",
-    "solpolpy >= 0.6.1, <= 0.7.0",
+    "solpolpy == 0.8.0",
     "sunpy[all] >= 7.1.2, <= 8.0.0",
     "sunkit-image <= 0.7.0",
 ]

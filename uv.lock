@@ -4419,7 +4419,7 @@ requires-dist = [
     { name = "scipy", specifier = ">=1.16.1,<=1.18.1" },
     { name = "sep", marker = "extra == 'super-user'", specifier = "==1.4.1" },
     { name = "setuptools", marker = "extra == 'super-user'", specifier = "==78.1.1" },
-    { name = "solpolpy", specifier = ">=0.6.1,<=0.7.0" },
+    { name = "solpolpy", specifier = "==0.8.0" },
     { name = "sunkit-image", specifier = "<=0.7.0" },
     { name = "sunpy", extras = ["all"], specifier = ">=7.1.2,<=8.0.0" },
     { name = "threadpoolctl", marker = "extra == 'super-user'", specifier = "<=3.6.0,>=3.6.0" },
@@ -5835,7 +5835,7 @@ wheels = [
 
 [[package]]
 name = "solpolpy"
-version = "0.7.0"
+version = "0.8.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "astropy" },
@@ -5846,7 +5846,7 @@ dependencies = [
     { name = "sunkit-image" },
     { name = "sunpy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/79/22/43f5fffd103abdf1dd79dbbe915618456f334ed85e3094a419b40a3e7155/solpolpy-0.7.0.tar.gz", hash = "sha256:1b6e58ef5cc21e173286404f5021076bdecbaf8cedb17d76ae6ef04983011bb4", size = 22740001, upload-time = "2026-07-28T08:43:27.399Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/6e/c0/bdd975f0e36085394e50a5766f943eff22f1c5f1c115030bf6cab42e0b6d/solpolpy-0.8.0.tar.gz", hash = "sha256:7a49ae18efdc98b600ae6678dbf079d0ae5ed3ca027f044c53e49fa0e46f29e5", size = 22786178, upload-time = "2026-10-16T15:21:52.609Z" }
 
 [[package]]
 name = "sortedcontainers"
