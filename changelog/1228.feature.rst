@@ -1,1 +1,0 @@
-Include NFI images in CAM scheduling and production

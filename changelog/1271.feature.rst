@@ -1,1 +1,0 @@
-Change F-corona percentile from 3 to 2%.
