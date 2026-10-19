@@ -119,9 +119,10 @@ def test_level3_flow_PTM_runs_with_filenames(sample_ndcube, tmpdir, prefect_test
     write_ndcube_to_fits(after_starfield_model, after_starfield_model_path, write_hash=False, skip_stats=True)
 
     output = level3_core_flow([data_list],
+                                 None,
                                  before_starfield_model_path,
                                  after_starfield_model_path,
-                                 None)
+                                 output_filename = None)
     assert isinstance(output[0], PUNCHCube)
     assert output[0].meta['TYPECODE'].value == 'PT'
     assert output[0].meta['OBSCODE'].value == 'M'
@@ -143,9 +144,10 @@ def test_level3_flow_CTM_runs_with_filenames(sample_ndcube, tmpdir, prefect_test
     write_ndcube_to_fits(after_starfield_model, after_starfield_model_path, write_hash=False, skip_stats=True)
 
     output = level3_core_flow([data_list],
+                                 None,
                                  before_starfield_model_path,
                                  after_starfield_model_path,
-                                 None)
+                                 output_filename = None)
     assert isinstance(output[0], PUNCHCube)
     assert output[0].meta['TYPECODE'].value == 'CT'
     assert output[0].meta['OBSCODE'].value == 'M'

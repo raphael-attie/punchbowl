@@ -247,10 +247,10 @@ def level3_PIM_CIM_flow(data_list: list[str] | list[PUNCHCube],  # noqa: N802
 
 @punch_flow
 def level3_core_flow(data_list: list[str | PUNCHCube],
-                     nfi_list: list[str | PUNCHCube | None],
+                     nfi_list: list[str | PUNCHCube] | None,
                      before_starfield_path: str | None,
                      after_starfield_path: str | None,
-                     nfi_wfi_divide_radius: float | None,
+                     nfi_wfi_divide_radius: float | None = None,
                      nfi_scale_factor: float = 1,
                      output_filename: str | None = None) -> list[PUNCHCube]:
     """
@@ -260,8 +260,9 @@ def level3_core_flow(data_list: list[str | PUNCHCube],
     ----------
     data_list : list[str | PUNCHCube]
         Input list string of data files or a list PUNCHCubes of Level 3 PIM or CIM PUNCH data.
-    nfi_list : list[str | PUNCHCube | None]
-        NFI files, if any, to insert in the mosaics.
+    nfi_list : list[str | PUNCHCube | None] | None
+        Input list string of data files, a list of PUNCHCube NFI files to insert in the mosaics, or None if no NFI
+        files will be inserted into the mosaics.
     before_starfield_path : list[str | DataLoader]
         Input starfield model (CSM or PSM) file path with timestamps prior to the input PUNCH data.
         Will be used with after_starfield_path to interpolate for a starfield model at the time of the PUNCH data
@@ -272,9 +273,9 @@ def level3_core_flow(data_list: list[str | PUNCHCube],
         timestamp. At least one of before_starfield_path or after_starfield_path must be provided.
     nfi_wfi_divide_radius : float
         A radius in pixels that divides the NFI region of the final mosiac from the WFI region. If not provided, there
-        will be no NFI region.
+        will be no NFI region. Optional.
     nfi_scale_factor : float
-        An ad-hoc scale factor to apply to the NFI pixel values.
+        An ad-hoc scale factor to apply to the NFI pixel values. Optional.
     output_filename : str | None
         Filename for the starfield-subtracted PAM or CAM file/s. Optional.
 
@@ -288,6 +289,11 @@ def level3_core_flow(data_list: list[str | PUNCHCube],
     logger = get_logger()
 
     logger.info("beginning level 3 flow")
+
+    # If no NFI files input, create a list of Nones
+    if nfi_list is None:
+        nfi_list = [None] * len(data_list)
+
     data_list = [load_image_task(d) if isinstance(d, str) else d for d in data_list]
     nfi_list = [load_image_task(d) if isinstance(d, str) else d for d in nfi_list]
     is_polarized = data_list[0].meta["TYPECODE"].value == "PI"
