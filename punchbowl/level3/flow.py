@@ -260,6 +260,8 @@ def level3_core_flow(data_list: list[str | PUNCHCube],
     ----------
     data_list : list[str | PUNCHCube]
         Input list string of data files or a list PUNCHCubes of Level 3 PIM or CIM PUNCH data.
+    nfi_list : list[str | PUNCHCube | None]
+        NFI files, if any, to insert in the mosaics.
     before_starfield_path : list[str | DataLoader]
         Input starfield model (CSM or PSM) file path with timestamps prior to the input PUNCH data.
         Will be used with after_starfield_path to interpolate for a starfield model at the time of the PUNCH data
@@ -268,6 +270,11 @@ def level3_core_flow(data_list: list[str | PUNCHCube],
         Input starfield model (CSM or PSM) file path with timestamps after the input PUNCH data.
         Will be used with before_starfield_path to interpolate for a starfield model at the time of the PUNCH data
         timestamp. At least one of before_starfield_path or after_starfield_path must be provided.
+    nfi_wfi_divide_radius : float
+        A radius in pixels that divides the NFI region of the final mosiac from the WFI region. If not provided, there
+        will be no NFI region.
+    nfi_scale_factor : float
+        An ad-hoc scale factor to apply to the NFI pixel values.
     output_filename : str | None
         Filename for the starfield-subtracted PAM or CAM file/s. Optional.
 
@@ -276,24 +283,6 @@ def level3_core_flow(data_list: list[str | PUNCHCube],
     output : list[PUNCHCube]
         Starfield-subtracted starfield subtracted Level 3 PTM or CTM PUNCHCubes.
         The input data files---*IMs to process into *TMs
-    nfi_list : list[str | PUNCHCube | None]
-        NFI files, if any, to insert in the mosaics.
-    before_starfield_path : str | None
-        The path to a starfield model before the observations
-    after_starfield_path : str | None
-        The path to a starfield model after the observations
-    nfi_wfi_divide_radius : float
-        A radius in pixels that divides the NFI region of the final mosiac from the WFI region. If not provided, there
-        will be no NFI region.
-    nfi_scale_factor : float
-        An ad-hoc scale factor to apply to the NFI pixel values.
-    output_filename : str | None
-        A location at which to save the output file
-
-    Returns
-    -------
-    out_data_list : list[PUNCHCube]
-        The *TM cubes produced by this flow
 
     """
     logger = get_logger()
