@@ -383,18 +383,20 @@ def subtract_starfield_background_task(data_object: PUNCHCube,
     star_datacube_before = load_ndcube_from_fits(before_starfield_path)
     star_datacube_after = load_ndcube_from_fits(after_starfield_path)
 
+    # Can we instead add the uncertainty as a separate element rather than stacking with the data array?
+    # alternatively, add an uncertainty layer to the star datacubes?
     starfield_reprojected_before = reproject_adaptive(
         (np.stack([star_datacube_before.data, star_datacube_before.uncertainty.array], axis=0),
-        star_datacube_before.celestial_wcs),
-        data_object.celestial_wcs,
-        shape_out=data_object.data.shape,
+        star_datacube_before.celestial_wcs.celestial),
+        data_object.celestial_wcs.celestial,
+        shape_out=data_object.data.shape[-2:], # Exclude uncertainty array if it exists
         return_footprint=False)
 
     starfield_reprojected_after = reproject_adaptive(
         (np.stack([star_datacube_after.data, star_datacube_after.uncertainty.array], axis=0),
-        star_datacube_after.celestial_wcs),
-        data_object.celestial_wcs,
-        shape_out=data_object.data.shape,
+        star_datacube_after.celestial_wcs.celestial),
+        data_object.celestial_wcs.celestial,
+        shape_out=data_object.data.shape[-2:], # Exclude uncertainty array if it exists
         return_footprint=False)
 
     starfield_before = PUNCHCube(data=starfield_reprojected_before[0],
@@ -421,14 +423,14 @@ def subtract_starfield_background_task(data_object: PUNCHCube,
 
     starfield_model = Starfield(
         np.stack((star_datacube.data, star_datacube.uncertainty.array), axis=0),
-        data_object.celestial_wcs,
+        data_object.celestial_wcs.celestial,
     )
 
     original_mask = (data_object.data == 0) * ~np.isfinite(data_object.uncertainty.array)
 
     subtracted = starfield_model.subtract_from_image(
         PUNCHCube(data=np.stack((data_object.data, data_object.uncertainty.array)),
-               wcs=data_object.celestial_wcs,
+               wcs=data_object.celestial_wcs.celestial,
                meta=data_object.meta),
         handle_wrap_point=False,
         processor=PUNCHImageProcessor(key="A"))

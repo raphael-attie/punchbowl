@@ -107,14 +107,12 @@ def test_level3_flow_PTM_runs_with_filenames(sample_ndcube, tmpdir, prefect_test
     data_list = sample_ndcube(shape=(3, 10, 10), code="PIM", level="3")
 
     before_starfield_model = sample_ndcube(shape=(3, 10, 10), code="PSM", level="3")
-    before_starfield_model.wcs.world_to_pixel
     before_starfield_model_path = os.path.join(tmpdir, f"before_starfield.fits")
     before_starfield_model.meta['DATE-OBS'] = str(datetime(2024, 2, 22, 16, 0, 1)
                                                   - timedelta(hours=5))
     write_ndcube_to_fits(before_starfield_model, before_starfield_model_path, write_hash=False, skip_stats=True)
 
     after_starfield_model = sample_ndcube(shape=(3, 10, 10), code="PSM", level="3")
-    after_starfield_model.wcs.world_to_pixel
     after_starfield_model_path = os.path.join(tmpdir, f"after_starfield.fits")
     after_starfield_model.meta['DATE-OBS'] = str(datetime(2024, 2, 22, 16, 0, 1)
                                                  + timedelta(hours=5))
