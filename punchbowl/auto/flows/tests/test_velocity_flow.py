@@ -8,9 +8,9 @@ from sqlalchemy.orm import Session
 from punchbowl.auto.control.db import File
 from punchbowl.auto.flows.velocity import (
     TRACK_VELOCITY_DEFAULTS,
-    level3_vam_construct_file_info,
-    level3_vam_construct_flow_info,
-    level3_vam_query_ready_files,
+    level3_VAM_construct_file_info,
+    level3_VAM_construct_flow_info,
+    level3_VAM_query_ready_files,
 )
 from punchbowl.level3.velocity import get_cadence_min, get_required_frame_count
 
@@ -27,7 +27,7 @@ def session():
 
 
 def _pipeline_config(**l3_vam_config):
-    return {"file_version": "1", "flows": {"L3_VAM": {"t0": T0.isoformat(), **l3_vam_config}}}
+    return {"file_version": "1", "flows": {"level3_VAM": {"t0": T0.isoformat(), **l3_vam_config}}}
 
 
 def _add_files(session, product_code, start, end, skip=()):
@@ -55,7 +55,7 @@ OFFSET = timedelta(minutes=1, seconds=13)
 
 def test_groups_at_frames_nearest_to_nominal_reference_times(session):
     _add_files(session, "PTM", T0 + OFFSET, T0 + timedelta(hours=36))
-    groups = level3_vam_query_ready_files.fn(session, _pipeline_config())
+    groups = level3_VAM_query_ready_files.fn(session, _pipeline_config())
 
     reference_times = [g.reference_time for g in groups]
     # 12-hour inputs centered on 09:00, 15:00, 21:00 and 03:00 the next day fit in the 36 hours of data
@@ -72,13 +72,13 @@ def test_groups_at_frames_nearest_to_nominal_reference_times(session):
 
 def test_existing_velocity_maps_are_skipped(session):
     _add_files(session, "PTM", T0 + OFFSET, T0 + timedelta(hours=36))
-    groups = level3_vam_query_ready_files.fn(session, _pipeline_config())
+    groups = level3_VAM_query_ready_files.fn(session, _pipeline_config())
     skipped = groups[0].reference_time
     session.add(File(level="3", file_type="VA", observatory="M", state="created", file_version="1",
                      software_version="none", polarization="Y", date_obs=skipped))
     session.commit()
 
-    new_groups = level3_vam_query_ready_files.fn(session, _pipeline_config())
+    new_groups = level3_VAM_query_ready_files.fn(session, _pipeline_config())
     assert skipped not in [g.reference_time for g in new_groups]
     assert len(new_groups) == len(groups) - 1
 
@@ -87,7 +87,7 @@ def test_tolerated_missing_frames_are_scheduled(session):
     # Two consecutive missing PTM frames just before 15:00, in the flow window of that map
     i_15 = round((timedelta(hours=15) - OFFSET) / timedelta(minutes=get_cadence_min("PTM")))
     _add_files(session, "PTM", T0 + OFFSET, T0 + timedelta(hours=36), skip=(i_15 - 2, i_15 - 1))
-    groups = level3_vam_query_ready_files.fn(session, _pipeline_config())
+    groups = level3_VAM_query_ready_files.fn(session, _pipeline_config())
     group = next(g for g in groups if g.reference_time == T0 + timedelta(hours=15) + OFFSET)
     assert len(group) == _n_required("PTM") - 2
 
@@ -96,7 +96,7 @@ def test_too_many_missing_frames_are_not_scheduled(session):
     # Three consecutive missing PTM frames just before 15:00, in the flow window of that map
     i_15 = round((timedelta(hours=15) - OFFSET) / timedelta(minutes=get_cadence_min("PTM")))
     _add_files(session, "PTM", T0 + OFFSET, T0 + timedelta(hours=36), skip=(i_15 - 3, i_15 - 2, i_15 - 1))
-    groups = level3_vam_query_ready_files.fn(session, _pipeline_config())
+    groups = level3_VAM_query_ready_files.fn(session, _pipeline_config())
     assert T0 + timedelta(hours=15) + OFFSET not in [g.reference_time for g in groups]
     # The maps whose flow windows do not hold the missing frames are still scheduled
     assert T0 + timedelta(hours=27) + OFFSET in [g.reference_time for g in groups]
@@ -105,7 +105,7 @@ def test_too_many_missing_frames_are_not_scheduled(session):
 def test_product_code_from_config_selects_input_files(session):
     _add_files(session, "PTM", T0, T0 + timedelta(hours=36))
     _add_files(session, "CAM", T0, T0 + timedelta(hours=36))
-    groups = level3_vam_query_ready_files.fn(session, _pipeline_config(product_code="CAM"))
+    groups = level3_VAM_query_ready_files.fn(session, _pipeline_config(product_code="CAM"))
     assert groups
     assert all(f.file_type == "CA" and f.observatory == "M" for g in groups for f in g)
 
@@ -113,18 +113,18 @@ def test_product_code_from_config_selects_input_files(session):
 def test_unsupported_product_code_raises(session):
     _add_files(session, "PTM", T0, T0 + timedelta(hours=36))
     with pytest.raises(ValueError):
-        level3_vam_query_ready_files.fn(session, _pipeline_config(product_code="PIM"))
+        level3_VAM_query_ready_files.fn(session, _pipeline_config(product_code="PIM"))
 
 
 def test_flow_and_file_info_use_group_reference_time(session):
     _add_files(session, "PTM", T0, T0 + timedelta(hours=36))
     pipeline_config = _pipeline_config()
-    group = level3_vam_query_ready_files.fn(session, pipeline_config)[0]
+    group = level3_VAM_query_ready_files.fn(session, pipeline_config)[0]
 
-    output_file = level3_vam_construct_file_info.fn(group, pipeline_config, reference_time=None)[0]
+    output_file = level3_VAM_construct_file_info.fn(group, pipeline_config, reference_time=None)[0]
     assert output_file.date_obs == group.reference_time
 
-    flow = level3_vam_construct_flow_info.fn(group, output_file, pipeline_config, reference_time=None)
+    flow = level3_VAM_construct_flow_info.fn(group, output_file, pipeline_config, reference_time=None)
     call_data = json.loads(flow.call_data)
     assert datetime.fromisoformat(call_data["reference_time"]) == group.reference_time
     assert call_data["product_code"] == "PTM"
@@ -138,8 +138,8 @@ def test_flow_and_file_info_use_group_reference_time(session):
 def test_flow_parameters_from_config_override_defaults(session):
     _add_files(session, "PTM", T0, T0 + timedelta(hours=36))
     pipeline_config = _pipeline_config(delta_t=3, annuli_centers_rs=[20, 40, 60])
-    group = level3_vam_query_ready_files.fn(session, pipeline_config)[0]
-    output_file = level3_vam_construct_file_info.fn(group, pipeline_config)[0]
-    call_data = json.loads(level3_vam_construct_flow_info.fn(group, output_file, pipeline_config).call_data)
+    group = level3_VAM_query_ready_files.fn(session, pipeline_config)[0]
+    output_file = level3_VAM_construct_file_info.fn(group, pipeline_config)[0]
+    call_data = json.loads(level3_VAM_construct_flow_info.fn(group, output_file, pipeline_config).call_data)
     assert call_data["delta_t"] == 3
     assert call_data["annuli_centers_rs"] == [20, 40, 60]

@@ -74,7 +74,7 @@ def get_nominal_reference_time(obs_time: datetime, anchor: datetime) -> datetime
 
 
 @task
-def level3_vam_query_ready_files(session, pipeline_config: dict, reference_time: datetime=None, max_n: float=100) -> list:
+def level3_VAM_query_ready_files(session, pipeline_config: dict, reference_time: datetime=None, max_n: float=100) -> list:
     """Queries files ready for velocity tracking.
 
     Velocity maps are made at the nominal reference times 03:00, 09:00, 15:00 and 21:00 UTC since t0, on a 6-hour
@@ -100,7 +100,7 @@ def level3_vam_query_ready_files(session, pipeline_config: dict, reference_time:
     list
         Groups of ready files, as VAMInputGroup carrying their reference time, most recent first
     """
-    flow_type = "L3_VAM"
+    flow_type = "level3_VAM"
     logger = get_logger()
     flow_config = pipeline_config["flows"][flow_type]
     product_code = get_product_code(flow_config)
@@ -165,7 +165,7 @@ def level3_vam_query_ready_files(session, pipeline_config: dict, reference_time:
 
 
 @task
-def level3_vam_construct_flow_info(level3_input_files: VAMInputGroup,
+def level3_VAM_construct_flow_info(level3_input_files: VAMInputGroup,
                                    level3_velocity_file: File,
                                    pipeline_config: dict,
                                    reference_time: datetime | None = None,
@@ -181,7 +181,7 @@ def level3_vam_construct_flow_info(level3_input_files: VAMInputGroup,
     pipeline_config : dict
         Pipeline configuration settings
     reference_time : datetime, optional
-        Unused: the reference time is the one set on the group of input files by level3_vam_query_ready_files
+        Unused: the reference time is the one set on the group of input files by level3_VAM_query_ready_files
     session : _type_, optional
         Database session, by default None
 
@@ -190,7 +190,7 @@ def level3_vam_construct_flow_info(level3_input_files: VAMInputGroup,
     Flow
         Velocity tracking flow to run
     """
-    flow_type = "L3_VAM"
+    flow_type = "level3_VAM"
     state = "planned"
     creation_time = datetime.now()
     flow_config = pipeline_config["flows"][flow_type]
@@ -216,7 +216,7 @@ def level3_vam_construct_flow_info(level3_input_files: VAMInputGroup,
     )
 
 @task
-def level3_vam_construct_file_info(level3_files: VAMInputGroup, pipeline_config: dict,
+def level3_VAM_construct_file_info(level3_files: VAMInputGroup, pipeline_config: dict,
                                    reference_time: datetime | None = None) -> list[File]:
     """Constructs specified file information
 
@@ -227,7 +227,7 @@ def level3_vam_construct_file_info(level3_files: VAMInputGroup, pipeline_config:
     pipeline_config : dict
         Pipeline configuration settings
     reference_time : datetime, optional
-        Unused: the reference time is the one set on the group of input files by level3_vam_query_ready_files
+        Unused: the reference time is the one set on the group of input files by level3_VAM_query_ready_files
 
     Returns
     -------
@@ -252,7 +252,7 @@ def level3_vam_construct_file_info(level3_files: VAMInputGroup, pipeline_config:
 
 
 @flow
-def level3_vam_scheduler_flow(pipeline_config_path=None, session=None) -> None:
+def level3_VAM_scheduler_flow(pipeline_config_path=None, session=None) -> None:
     """Define the velocity tracking scheduler flow
 
     Parameters
@@ -263,16 +263,16 @@ def level3_vam_scheduler_flow(pipeline_config_path=None, session=None) -> None:
         Database session, by default None
     """
     generic_scheduler_flow_logic(
-        level3_vam_query_ready_files,
-        level3_vam_construct_file_info,
-        level3_vam_construct_flow_info,
+        level3_VAM_query_ready_files,
+        level3_VAM_construct_file_info,
+        level3_VAM_construct_flow_info,
         pipeline_config_path,
         update_input_file_state=False,
         session=session,
     )
 
 
-def level3_vam_call_data_processor(call_data: dict, pipeline_config, session=None) -> dict:
+def level3_VAM_call_data_processor(call_data: dict, pipeline_config, session=None) -> dict:
     """Generate velocity tracking call data
 
     Parameters
@@ -294,7 +294,7 @@ def level3_vam_call_data_processor(call_data: dict, pipeline_config, session=Non
 
 
 @flow
-def level3_vam_process_flow(flow_id: int, pipeline_config_path: str = None, session = None) -> None:
+def level3_VAM_process_flow(flow_id: int, pipeline_config_path: str = None, session = None) -> None:
     """Define the velocity tracking process flow
 
     Parameters
@@ -310,5 +310,5 @@ def level3_vam_process_flow(flow_id: int, pipeline_config_path: str = None, sess
                                generate_level3_velocity_flow,
                                pipeline_config_path,
                                session=session,
-                               call_data_processor=level3_vam_call_data_processor,
+                               call_data_processor=level3_VAM_call_data_processor,
                                )
