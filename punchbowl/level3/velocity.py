@@ -82,6 +82,31 @@ def get_time_avg_size(product_code: str, time_avg_hours: float) -> int:
     return 2 * (n_frames // 2) + 1
 
 
+def get_delta_t_frames(product_code: str, delta_t_minutes: float) -> int:
+    """
+    Get the time lag in frames between the two frames of each correlated pair, nearest to ``delta_t_minutes``.
+
+    Parameters
+    ----------
+    product_code : str
+        Either 'CAM', 'PAM', 'CTM', or 'PTM'
+    delta_t_minutes : float
+        Time lag in minutes between the two frames of each correlated pair
+
+    Returns
+    -------
+    int
+        Time lag in frames, at least 1
+
+    """
+    n_frames = round(delta_t_minutes / get_cadence_min(product_code))
+    if n_frames < 1:
+        msg = (f"delta_t_minutes={delta_t_minutes} is shorter than half the {product_code} cadence of "
+               f"{get_cadence_min(product_code)} min, so the correlated frames would have no time lag")
+        raise ValueError(msg)
+    return n_frames
+
+
 def get_frames_per_window(product_code: str, flow_window_hours: float) -> int:
     """
     Get the number of frames of the flow map integration window spanning at least ``flow_window_hours``.
@@ -1655,7 +1680,7 @@ def plot_flow_map(data: PUNCHCube, rebin: int = 10, plot_errors: bool = True, vm
 def track_velocity(files: list[str] | list[Path],
                    product_code: str,
                    flow_window_hours: float = 6,
-                   delta_t: int = 2,
+                   delta_t_minutes: float = 64,
                    sparsity: int = 1,
                    n_ofs: int = 101,
                    delta_px: int = 1,
@@ -1692,8 +1717,9 @@ def track_velocity(files: list[str] | list[Path],
     flow_window_hours: float, optional
         Minimum duration of the flow map integration window in hours, see :func:`get_frames_per_window`
 
-    delta_t : int, optional
-        Time offset in frames between images
+    delta_t_minutes : float, optional
+        Time lag in minutes between the two frames of each correlated pair, converted to the nearest
+        whole number of frames of the product, see :func:`get_delta_t_frames`
 
     sparsity : int, optional
         Frame skip interval for averaging
@@ -1773,6 +1799,8 @@ def track_velocity(files: list[str] | list[Path],
     arcsec_km = arcsec_rad * au_km  # 1 arcsec in km at 1 AU
 
     # Checking input comply with requirements
+
+    delta_t = get_delta_t_frames(product_code, delta_t_minutes)
 
     if azimuth_bins_remap % az_bin != 0:
         raise ValueError("AZIMUTH_BINS_REMAP must be divisible by AZ_BIN")

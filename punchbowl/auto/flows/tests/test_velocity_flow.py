@@ -179,9 +179,9 @@ def test_flow_and_file_info_use_group_reference_time(session, product_code):
 @pytest.mark.parametrize("product_code", PRODUCT_CODES)
 def test_flow_parameters_from_config_override_defaults(session, product_code):
     _add_files(session, product_code, T0, DATA_END)
-    pipeline_config = _pipeline_config(product_code=product_code, delta_t=3, annuli_centers_rs=[20, 40, 60])
+    pipeline_config = _pipeline_config(product_code=product_code, delta_t_minutes=96, annuli_centers_rs=[20, 40, 60])
     group = level3_VAM_query_ready_files.fn(session, pipeline_config)[0]
     output_file = level3_VAM_construct_file_info.fn(group, pipeline_config)[0]
     call_data = json.loads(level3_VAM_construct_flow_info.fn(group, output_file, pipeline_config).call_data)
-    assert call_data["delta_t"] == 3
+    assert call_data["delta_t_minutes"] == 96
     assert call_data["annuli_centers_rs"] == [20, 40, 60]

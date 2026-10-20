@@ -383,7 +383,7 @@ def generate_level3_low_noise_flow(data_list: list[str | PUNCHCube],
 def generate_level3_velocity_flow(files: list[str],
                                   product_code: str | None = None,
                                   flow_window_hours: float | None = None,
-                                  delta_t: int | None = None,
+                                  delta_t_minutes: float | None = None,
                                   sparsity: int | None = None,
                                   n_ofs: int | None = None,
                                   delta_px: int | None = None,
@@ -421,8 +421,8 @@ def generate_level3_velocity_flow(files: list[str],
         if this is given and does not match, a ValueError is raised.
     flow_window_hours : float, optional
         Minimum duration of the flow map integration window in hours
-    delta_t : int, optional
-        Time offset in frames between images
+    delta_t_minutes : float, optional
+        Time lag in minutes between the two frames of each correlated pair
     sparsity : int, optional
         Frame skip interval for averaging
     n_ofs : int, optional
@@ -476,7 +476,7 @@ def generate_level3_velocity_flow(files: list[str],
     logger.info("Generating velocity data product")
     velocity_options = {
         "flow_window_hours": flow_window_hours,
-        "delta_t": delta_t,
+        "delta_t_minutes": delta_t_minutes,
         "sparsity": sparsity,
         "n_ofs": n_ofs,
         "delta_px": delta_px,

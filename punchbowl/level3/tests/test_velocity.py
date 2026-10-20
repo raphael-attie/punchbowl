@@ -13,6 +13,7 @@ from punchbowl.data.punchcube import PUNCHCube
 from punchbowl.level3.flow import generate_level3_velocity_flow
 from punchbowl.level3.velocity import (
     check_missing_runs,
+    get_delta_t_frames,
     get_flow_window_start,
     get_frame_slots,
     get_frames_per_window,
@@ -34,7 +35,7 @@ CADENCE_MIN = 4  # minutes between consecutive PTM frames, as used by track_velo
 # With fewer frame pairs, the sub-pixel peak fit of the synthetic drift is biased beyond the test tolerance
 FLOW_WINDOW_HOURS = 0.4
 FRAMES_PER_WINDOW = 6  # FLOW_WINDOW_HOURS at the PTM cadence
-DELTA_T = 1
+DELTA_T_MINUTES = CADENCE_MIN  # a 1-frame lag, over which the synthetic ring drifts by RING_DRIFT_PX
 SPARSITY = 1
 N_OFS = 21
 AZIMUTH_BINS_REMAP = 360
@@ -59,15 +60,15 @@ CDELT_DEG = 0.0225
 
 # track_velocity measures radial speeds in km/s. Its internal conversion is
 # CDELT_DEG * 3600 = 81 arcsec/polar-pixel * ~727 km/arcsec = ~58,900 km per polar pixel, and the
-# effective time step between correlated frames is CADENCE_MIN * DELTA_T minutes.
+# effective time step between correlated frames is DELTA_T_MINUTES.
 ARCSEC_PER_POLAR_PX = CDELT_DEG * 3600
 KM_PER_POLAR_PX = ARCSEC_PER_POLAR_PX * (4.84814e-6 * 150e6)
-EFFECTIVE_CADENCE_SEC = CADENCE_MIN * DELTA_T * 60
+EFFECTIVE_CADENCE_SEC = DELTA_T_MINUTES * 60
 EXPECTED_WIND_KPS = int(round(RING_DRIFT_PX * KM_PER_POLAR_PX / EFFECTIVE_CADENCE_SEC))
 
 TEST_PARAMS = {
     "flow_window_hours": FLOW_WINDOW_HOURS,
-    "delta_t": DELTA_T,
+    "delta_t_minutes": DELTA_T_MINUTES,
     "sparsity": SPARSITY,
     "n_ofs": N_OFS,
     "expected_wind_kps": EXPECTED_WIND_KPS,
@@ -402,6 +403,17 @@ def test_frames_per_window_spans_flow_window_hours(product_code, expected):
     """Test that the flow window spans at least 6 hours, with one more frame when just below."""
     assert get_frames_per_window(product_code, 6) == expected
     assert get_frames_per_window(PRODUCT_CODE, FLOW_WINDOW_HOURS) == FRAMES_PER_WINDOW
+
+
+@pytest.mark.parametrize(("product_code", "expected"), [("CAM", 2), ("PAM", 2), ("CTM", 8), ("PTM", 16)])
+def test_delta_t_frames_spans_delta_t_minutes(product_code, expected):
+    """Test that the default 64-min lag is the same physical time lag for every product."""
+    assert get_delta_t_frames(product_code, 64) == expected
+
+
+def test_delta_t_shorter_than_half_a_frame_raises():
+    with pytest.raises(ValueError, match="delta_t_minutes"):
+        get_delta_t_frames("CAM", 10)
 
 
 def test_frame_slots_with_gaps_and_jitter():
