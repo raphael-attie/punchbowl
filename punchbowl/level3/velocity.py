@@ -1614,36 +1614,40 @@ def plot_flow_map(data: PUNCHCube, rebin: int = 10, plot_errors: bool = True, vm
     band_centers_rs = np.fromstring(data.meta["YCENS"].value[1:-1], dtype=float, sep=",")
     band_width_rs = int(data.meta["BANDWDTH"].value)
 
-    plt.style.use(theme)
-    fig = plt.figure(figsize=(6, 6))
-    ax = fig.add_subplot(1, 1, 1, projection="polar")
-    colors = ["cyan", "orange", "yellow", "magenta"]
-    for i, center in enumerate(band_centers_rs[0:4]):  # up to 4 bands. Ignore the rest if more
-        speed_annulus, sigma_annulus, thetas = circle_results(speeds[i], sigmas[i], thetas)
-        annulus = [int(center - band_width_rs / 2), int(center + band_width_rs / 2)]
-        ax.plot(thetas, speed_annulus, color=colors[i], ls="-", label=f"{annulus[0]} --> {annulus[1]} Rs")
-        if plot_errors:
-            ax.fill_between(thetas, speed_annulus - sigma_annulus, speed_annulus + sigma_annulus, alpha=0.2,
-                            color=colors[i])
+    # Use context manager here to isolate the theme to this plot without affect default theme globally.
+    with plt.style.context(theme):
+        fig = plt.figure(figsize=(6, 6))
+        ax = fig.add_subplot(1, 1, 1, projection="polar")
+        colors = ["cyan", "orange", "yellow", "magenta"]
 
-    date_start = data.meta["DATE-BEG"].value[:-7]
-    date_end = data.meta["DATE-END"].value[:-7]
-    ax.set_title(f"{date_start} -> {date_end}")
-    ax.set_ylim(0, vmax)
+        for i, center in enumerate(band_centers_rs[0:4]):  # up to 4 bands. Ignore the rest if more
+            speed_annulus, sigma_annulus, thetas = circle_results(speeds[i], sigmas[i], thetas)
+            annulus = [int(center - band_width_rs / 2), int(center + band_width_rs / 2)]
+            ax.plot(thetas, speed_annulus, color=colors[i], ls="-", label=f"{annulus[0]} --> {annulus[1]} Rs")
+            if plot_errors:
+                ax.fill_between(thetas, speed_annulus - sigma_annulus, speed_annulus + sigma_annulus, alpha=0.2,
+                                color=colors[i])
 
-    ax.set_theta_zero_location("N")
-    ax.set_rlabel_position(180)
-    ax.set_xlabel("Radial velocity [km/s]")
-    ax.legend(loc="lower right", bbox_to_anchor=[1.05, -0.1])
+        date_start = data.meta["DATE-BEG"].value[:-7]
+        date_end = data.meta["DATE-END"].value[:-7]
+        ax.set_title(f"{date_start} -> {date_end}")
+        ax.set_ylim(0, vmax)
 
-    ax.set_xticks(np.deg2rad(np.arange(0, 360, 30)))  # labeled every 30 deg
-    ax.set_xticks(np.deg2rad(np.arange(0, 360, 10)), minor=True)  # ticks every 10 deg
-    ax.tick_params(axis="x", which="minor", length=3)
-    ax.grid(which="minor", axis="x", linestyle=":", linewidth=1, alpha=0.4)
+        ax.set_theta_zero_location("N")
+        ax.set_rlabel_position(180)
+        ax.set_xlabel("Radial velocity [km/s]")
+        ax.legend(loc="lower right", bbox_to_anchor=[1.05, -0.1])
 
-    if filename is not None:
-        plt.savefig(filename)
+        ax.set_xticks(np.deg2rad(np.arange(0, 360, 30)))  # labeled every 30 deg
+        ax.set_xticks(np.deg2rad(np.arange(0, 360, 10)), minor=True)  # ticks every 10 deg
+        ax.tick_params(axis="x", which="minor", length=3)
+        ax.grid(which="minor", axis="x", linestyle=":", linewidth=1, alpha=0.4)
 
+        if filename is not None:
+            plt.savefig(filename)
+
+    # Return the Figure outside the 'with' block.
+    # The figure object has already absorbed the style internally.
     return fig
 
 
