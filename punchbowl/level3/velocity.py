@@ -1,9 +1,10 @@
+import math
 import warnings
+from bisect import bisect_left
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import astropy.units as u
-import cv2 as cv  # https://docs.opencv.org/4.12.0/index.html
 import matplotlib.pyplot as plt
 import numpy as np
 from astropy.io import fits
@@ -19,51 +20,341 @@ from punchbowl.data.meta import NormalizedMetadata
 from punchbowl.data.punchcube import PUNCHCube
 from punchbowl.prefect import get_logger, punch_flow
 
+# Time interval (minutes) between consecutive frames for each data product usable for flow tracking
+_TCADENCE_MIN = {
+    "CAM": 32,
+    "CTM": 8,
+    "PTM": 4,
+    "PAM": 32,
+}
 
-def get_buffer(frames_per_window: int, delta_t: int,
-               cadence_min: int,
-               target_hours: float = 12.0) -> int:
+# Tolerated missing frames per ~6-hour span, which are filled by linear interpolation: longest run of consecutive
+# missing frames, maximum total of missing frames, and an alternative accepted pattern of runs.
+_MISSING_FRAME_RULES = {
+    "CAM": {"max_run": 1, "max_total": 2, "accepted_runs": None},
+    "PAM": {"max_run": 1, "max_total": 2, "accepted_runs": None},
+    "CTM": {"max_run": 2, "max_total": 3, "accepted_runs": [2, 2]},
+    "PTM": {"max_run": 2, "max_total": 3, "accepted_runs": [2, 2]},
+}
+
+
+def get_cadence_min(product_code: str) -> int:
     """
-    Get a buffer time for a temporal average over at least the number of hours defined by target_hours.
-
-    It outputs the number of additional frames so that (FRAMES_PER_WINDOW + buffer) covers
-    at least `target_hours` of observation time, given the product cadence
-    (TCADENCE_MIN) and the stride DELTA_T. Result is always >= frames_per_window.
+    Get the time interval in minutes between consecutive frames of a data product usable for flow tracking.
 
     Parameters
     ----------
-    frames_per_window : int
-        Number of frames per window (before applying the stride delta_t).
-    delta_t : int
-        Effective frame stride between frames entering the window.
-    cadence_min : int
-        Time interval between consecutive frames in minutes, before applying any stride.
-    target_hours : float
-        Minimum total observation time in hours. Default 12.
+    product_code : str
+        Either 'CAM', 'PAM', 'CTM', or 'PTM'
 
     Returns
     -------
     int
-        Number of additional frames required so that the strided window covers
-        at least ``target_hours``.  Always >= frames_per_window.
+        Cadence of the data product in minutes
 
     """
-    fpw = frames_per_window
-    # Integration time covered by fpw frames with stride dt
-    frames_per_subset = fpw // delta_t
-    integration_min = cadence_min * delta_t * (frames_per_subset - 1)
+    if product_code not in _TCADENCE_MIN:
+        msg = f"Unsupported product code {product_code!r} for flow tracking, expected one of {list(_TCADENCE_MIN)}"
+        raise ValueError(msg)
+    return _TCADENCE_MIN[product_code]
 
-    target_min = target_hours * 60.0
-    if integration_min >= target_min:
-        extra_frames = 0
+
+def get_time_avg_size(product_code: str, time_avg_hours: float) -> int:
+    """
+    Get the size in frames of the running time-average kernel spanning about ``time_avg_hours``.
+
+    The size is odd so that the kernel is centered on each frame.
+
+    Parameters
+    ----------
+    product_code : str
+        Either 'CAM', 'PAM', 'CTM', or 'PTM'
+    time_avg_hours : float
+        Duration of the running time-average kernel in hours
+
+    Returns
+    -------
+    int
+        Odd number of frames of the running time-average kernel
+
+    """
+    n_frames = round(time_avg_hours * 60 / get_cadence_min(product_code))
+    return 2 * (n_frames // 2) + 1
+
+
+def get_frames_per_window(product_code: str, flow_window_hours: float) -> int:
+    """
+    Get the number of frames of the flow map integration window spanning at least ``flow_window_hours``.
+
+    Parameters
+    ----------
+    product_code : str
+        Either 'CAM', 'PAM', 'CTM', or 'PTM'
+    flow_window_hours : float
+        Minimum duration of the flow map integration window in hours
+
+    Returns
+    -------
+    int
+        Number of frames in the flow map integration window
+
+    """
+    # Round first so that floating point errors do not add a frame, e.g. 0.4 h at 4 min -> 6.000000000000001
+    return math.ceil(round(flow_window_hours * 60 / get_cadence_min(product_code), 6))
+
+
+def get_required_frame_count(product_code: str,
+                             flow_window_hours: float,
+                             time_avg_hours: float) -> tuple[int, int, int]:
+    """
+    Get the number of input frames required by flow tracking and the position of the flow window among them.
+
+    The flow map integration window is centered in the timeline of the input files, with a temporal-average
+    buffer on either side:
+    [ta start......ft start......ft end.......ta end]
+    The flow window [tstart, tend] is inclusive and holds exactly ``get_frames_per_window`` frames.
+    Each side of the buffer is half of the running time-average kernel (see :func:`get_time_avg_size`),
+    so that the kernel centered on any frame of the flow window only covers actual frames, without edge effects.
+
+    Parameters
+    ----------
+    product_code : str
+        Either 'CAM', 'PAM', 'CTM', or 'PTM'
+    flow_window_hours : float
+        Minimum duration of the flow map integration window in hours
+    time_avg_hours : float
+        Duration of the running time-average kernel in hours
+
+    Returns
+    -------
+    tuple[int, int, int]
+        Number of required files, and the start and end indices (inclusive) of the flow window among them
+
+    """
+    frames_per_window = get_frames_per_window(product_code, flow_window_hours)
+    # The time-average kernel has an odd size, so it slides evenly over the flow window
+    half_buffer = get_time_avg_size(product_code, time_avg_hours) // 2
+    tstart = half_buffer
+    tend = tstart + frames_per_window - 1
+    n_files = tend + half_buffer + 1
+    return n_files, tstart, tend
+
+
+def get_flow_window_start(obs_times: list[datetime], reference_time: datetime, frames_per_window: int) -> int:
+    """
+    Get the index of the first frame of the flow window centered on the reference time.
+
+    The flow window [tstart, tend] (inclusive) holds ``frames_per_window`` frames, with
+    ``frames_per_window // 2`` frames on either side of its middle:
+
+    - odd ``frames_per_window``: the middle frame is the one nearest to the reference time.
+    - even ``frames_per_window``: the reference time falls between the two middle frames, i.e. the
+      second middle frame is the first one observed at or after the reference time.
+
+    Parameters
+    ----------
+    obs_times : list[datetime]
+        Observation times of the frames, in chronological order
+    reference_time : datetime
+        Authoritative reference time on which to center the flow window
+    frames_per_window : int
+        Number of frames in the flow window
+
+    Returns
+    -------
+    int
+        Index of the first frame of the flow window in ``obs_times``. It may be out of the range of
+        ``obs_times`` if there are not enough frames before the reference time.
+
+    """
+    i_mid = bisect_left(obs_times, reference_time)
+    if frames_per_window % 2 == 1 and (
+            i_mid == len(obs_times)
+            or (i_mid > 0 and reference_time - obs_times[i_mid - 1] <= obs_times[i_mid] - reference_time)):
+        # The previous frame is the nearest one (ties go to the earlier frame)
+        i_mid -= 1
+    return i_mid - frames_per_window // 2
+
+
+def get_frame_slots(obs_times: list[datetime], cadence_min: float) -> tuple[list[int | None], list[datetime]]:
+    """
+    Lay out chronological frames on a regular sequence of slots at the product cadence.
+
+    Missing frames get empty slots. Their number between two consecutive frames is inferred from the time
+    difference of these frames, which is robust to small timing jitter and slow drifts of the cadence.
+
+    Parameters
+    ----------
+    obs_times : list[datetime]
+        Observation times of the frames, in chronological order
+    cadence_min : float
+        Time interval between consecutive frames in minutes
+
+    Returns
+    -------
+    tuple[list[int | None], list[datetime]]
+        For each slot, the index of its frame in ``obs_times`` or None for a missing frame, and the
+        time of each slot, linearly interpolated between the neighboring frames for missing ones.
+
+    """
+    cadence = timedelta(minutes=cadence_min)
+    slots, slot_times = [], []
+    for i, obs_time in enumerate(obs_times):
+        if i > 0:
+            n_missing = max(round((obs_time - obs_times[i - 1]) / cadence) - 1, 0)
+            step = (obs_time - obs_times[i - 1]) / (n_missing + 1)
+            slots.extend([None] * n_missing)
+            slot_times.extend(obs_times[i - 1] + k * step for k in range(1, n_missing + 1))
+        slots.append(i)
+        slot_times.append(obs_time)
+    return slots, slot_times
+
+
+def _missing_runs(slots: list[int | None], start: int, stop: int) -> list[int]:
+    """Get the full lengths of the runs of missing slots overlapping slots[start:stop]."""
+    runs = []
+    i = start
+    while i < stop:
+        if slots[i] is None:
+            lo = hi = i
+            while lo > 0 and slots[lo - 1] is None:
+                lo -= 1
+            while hi + 1 < len(slots) and slots[hi + 1] is None:
+                hi += 1
+            runs.append(hi - lo + 1)
+            i = hi + 1
+        else:
+            i += 1
+    return runs
+
+
+def check_missing_runs(runs: list[int], product_code: str) -> bool:
+    """
+    Check whether runs of consecutive missing frames over a ~6-hour span can be filled by interpolation.
+
+    - CAM, PAM: runs of 1 frame, and at most 2 missing frames.
+    - CTM, PTM: runs of at most 2 frames, and at most 3 missing frames, or exactly two runs of 2 frames.
+
+    Parameters
+    ----------
+    runs : list[int]
+        Lengths of the runs of consecutive missing frames
+    product_code : str
+        Either 'CAM', 'PAM', 'CTM', or 'PTM'
+
+    Returns
+    -------
+    bool
+        True if the missing frames are tolerated
+
+    """
+    # Raises a ValueError for products unsupported by flow tracking
+    get_cadence_min(product_code)
+    rules = _MISSING_FRAME_RULES[product_code]
+    if any(run > rules["max_run"] for run in runs):
+        return False
+    return sum(runs) <= rules["max_total"] or sorted(runs) == rules["accepted_runs"]
+
+
+def select_frame_slots(slots: list[int | None],
+                       slot_times: list[datetime],
+                       product_code: str,
+                       flow_window_hours: float,
+                       time_avg_hours: float,
+                       reference_time: datetime | None = None) -> tuple[int, int, int, int]:
+    """
+    Select the slots required by flow tracking, with the flow window centered on the reference time.
+
+    The missing frames are checked separately in the flow window and in the temporal-average buffer
+    (see :func:`check_missing_runs`). When the first or last required slot is missing, the selection is
+    extended to the nearest actual frame so that the missing ones can be interpolated.
+
+    Parameters
+    ----------
+    slots : list[int | None]
+        Slots from :func:`get_frame_slots`
+    slot_times : list[datetime]
+        Slot times from :func:`get_frame_slots`
+    product_code : str
+        Either 'CAM', 'PAM', 'CTM', or 'PTM'
+    flow_window_hours : float
+        Minimum duration of the flow map integration window in hours
+    time_avg_hours : float
+        Duration of the running time-average kernel in hours
+    reference_time : datetime, optional
+        Time on which to center the flow window (see :func:`get_flow_window_start`). If None, the
+        selection starts at the first slot.
+
+    Returns
+    -------
+    tuple[int, int, int, int]
+        First and last (inclusive) selected slots, and the start and end indices (inclusive) of the flow
+        window relative to the first selected slot.
+
+    """
+    n_required, tstart, tend = get_required_frame_count(product_code, flow_window_hours, time_avg_hours)
+    if reference_time is None:
+        first = 0
     else:
-        # Frames needed (before stride) so the strided window reaches the target
-        n_frames_needed = (target_min / (cadence_min * delta_t) + 1) * delta_t
-        extra_frames = int(np.ceil(n_frames_needed - fpw))
-        # Add an extra frame as a safety margin
-        extra_frames += 1
+        first = get_flow_window_start(slot_times, reference_time, tend - tstart + 1) - tstart
+    last = first + n_required - 1
+    if first < 0 or last >= len(slots):
+        msg = f"Not enough frames for flow tracking: {n_required} frames are required"
+        if reference_time is not None:
+            msg += f" centered on reference time {reference_time.isoformat()}"
+        raise ValueError(msg)
 
-    return max(extra_frames, fpw)
+    window_runs = _missing_runs(slots, first + tstart, first + tend + 1)
+    buffer_runs = _missing_runs(slots, first, first + tstart) + _missing_runs(slots, first + tend + 1, last + 1)
+    for name, runs in (("flow window", window_runs), ("temporal-average buffer", buffer_runs)):
+        if not check_missing_runs(runs, product_code):
+            msg = f"Too many missing {product_code} frames in the {name} for flow tracking: runs of {runs} frames"
+            raise ValueError(msg)
+
+    # Extend to the nearest actual frames to interpolate the missing ones at the edges
+    while slots[first] is None:
+        first -= 1
+        tstart += 1
+        tend += 1
+        if first < 0:
+            msg = "No frame before the first missing frames to interpolate them"
+            raise ValueError(msg)
+    while slots[last] is None:
+        last += 1
+        if last >= len(slots):
+            msg = "No frame after the last missing frames to interpolate them"
+            raise ValueError(msg)
+    return first, last, tstart, tend
+
+
+def infer_product_code(files: list[str] | list[Path], hdu: int = 1) -> str:
+    """
+    Infer the PUNCH product code shared by all the input files from their headers.
+
+    Parameters
+    ----------
+    files : list[str]
+        Input file paths
+    hdu : int, optional
+        Position of the header data unit in the FITS files holding the data
+
+    Returns
+    -------
+    str
+        Product code of the files, e.g. 'PTM'
+
+    """
+    product_codes = set()
+    for file in files:
+        header = fits.getheader(file, hdu)
+        product_codes.add(f"{header['TYPECODE']}{header['OBSCODE']}")
+    if len(product_codes) != 1:
+        msg = f"Flow tracking input files must all be of the same product type, got {sorted(product_codes)}"
+        raise ValueError(msg)
+    product_code = product_codes.pop()
+    # Raises a ValueError for products unsupported by flow tracking
+    get_cadence_min(product_code)
+    return product_code
 
 
 # ---------------------------------------------------------------------------- #
@@ -196,6 +487,9 @@ def polar_remap(
         ``polar_header=True``.
 
     """
+    # OpenCV is an optional (super_user) dependency, only needed for flow tracking
+    import cv2 as cv  # noqa: PLC0415
+
     image[~np.isfinite(image)] = 0
 
     polar_image = cv.warpPolar(
@@ -283,6 +577,29 @@ def remove_az_gain(cube: np.ndarray, ref: np.ndarray, az_smooth: float = 0.0) ->
     return cube / g[:, None, :]
 
 
+def _interpolate_missing_frames(cube: list, headers: list) -> None:
+    """
+    Fill in place the missing frames (None) by linear interpolation in time between the nearest frames on either side.
+
+    The headers of missing frames are copies of the previous frame's header with an interpolated DATE-OBS.
+    """
+    present = [i for i, image in enumerate(cube) if image is not None]
+    for i in range(len(cube)):
+        if cube[i] is not None:
+            continue
+        k = bisect_left(present, i)
+        if k in (0, len(present)):
+            msg = f"Missing frame {i} cannot be interpolated without frames on both sides"
+            raise ValueError(msg)
+        lo, hi = present[k - 1], present[k]
+        weight = (i - lo) / (hi - lo)
+        cube[i] = (1 - weight) * cube[lo] + weight * cube[hi]
+        obs_lo = datetime.fromisoformat(headers[lo]["DATE-OBS"])
+        obs_hi = datetime.fromisoformat(headers[hi]["DATE-OBS"])
+        headers[i] = headers[lo].copy()
+        headers[i]["DATE-OBS"] = (obs_lo + weight * (obs_hi - obs_lo)).isoformat(timespec="milliseconds")
+
+
 def preprocess_cube(
         files: list,
         product: str,
@@ -293,9 +610,10 @@ def preprocess_cube(
         crop: list | None = None,
         do_polar_remap: bool = True,
         deflicker: bool = False,
-        az_smooth: float = 10.0,
+        az_smooth: float = 0,
         remove_temporal_median: bool = False,
         time_win: list | None = None,
+        time_avg_size: int | None = None,
 ) -> tuple:
     """
     Load a time series of FITS frames into a single preprocessed cube.
@@ -312,8 +630,9 @@ def preprocess_cube(
 
     Parameters
     ----------
-    files : list of Path or str
-        Sorted list of FITS file paths to process.
+    files : list of Path or str or None
+        Sorted list of FITS file paths to process, one per frame at the product cadence. None marks a missing
+        frame, which is linearly interpolated in time between the nearest frames on either side.
     product : str
         PUNCH data product code of the input files (``'CAM'``, ``'PAM'``,
         ``'CTM'`` or ``'PTM'``).  For 3-D polarized/total-brightness cubes
@@ -347,6 +666,9 @@ def preprocess_cube(
     time_win: tuple, optional
         (start, end) indices (inclusive) of the time slice of interest in the input time series.
         This is useful to not have edge effects from the sliding temporal median
+    time_avg_size: int, optional
+        Size of the running time averaging kernel in number of frames. Default is the number of files.
+        Ignored if both deflicker and remove_temporal_median are False.
 
     Returns
     -------
@@ -359,34 +681,38 @@ def preprocess_cube(
     if time_win is None:
         time_win = (0, len(files) - 1)
 
-    cube = []
-    headers = []
-    for i in range(len(files)):
-        data = load_ndcube_from_fits(files[i])
+    if time_avg_size is None:
+        time_avg_size = len(files)
+
+    cube = [None] * len(files)
+    headers = [None] * len(files)
+    for i, file in enumerate(files):
+        if file is None:
+            continue
+        data = load_ndcube_from_fits(file)
         image = data.data[0, :, :] if product in ("PAM", "PTM") and data.data.ndim >= 3 else data.data
         header = data.meta.to_fits_header(wcs=data.wcs)
-        headers.append(header)
+        headers[i] = header
         if do_polar_remap:
             image = polar_remap(
                 image, header, polar_nr, num_azimuth_bins, az_bin,
                 crop=crop, rotate90=rotate90)
-        cube.append(image)
+        cube[i] = image
+
+    # Interpolating after the polar remap is equivalent to before it, as the remap is linear in pixel values.
+    _interpolate_missing_frames(cube, headers)
 
     cube = np.array(cube)
 
     if deflicker:
-        time_win_size = time_win[1] - time_win[0] + 1
-        ref = median_filter(cube, size=(time_win_size, 1, 1), mode="nearest")
+        ref = median_filter(cube, size=(time_avg_size, 1, 1), mode="nearest")
         cube = remove_az_gain(cube, ref, az_smooth=az_smooth)
 
     if remove_temporal_median:
-        # The calculation and subtraction of the temporal median must occur before standardization,
-        # but after deflicker
-        window = time_win[1] - time_win[0] + 1
-        new_median = median_filter(cube, size=(window, 1, 1), mode="nearest")
-        cube -= new_median
+        # The median is computed after the deflicker, so that it is cleaner
+        cube -= median_filter(cube, size=(time_avg_size, 1, 1), mode="nearest")
 
-    # Steer clear of temporal edge effects, symmetrically
+    # Time-crop to the time window of interest, which removes temporal edge effects, symmetrically
     cube = cube[time_win[0]:time_win[1] + 1]
     headers = headers[time_win[0]:time_win[1] + 1]
 
@@ -657,6 +983,7 @@ def accumulate_cross_correlation_across_frames(
         do_polar_remap: bool = True,
         deflicker: bool = False,
         remove_temporal_median: bool = False,
+        time_avg_size: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Accumulate pairwise cross-correlations over a sequence of FITS image frames.
@@ -667,8 +994,8 @@ def accumulate_cross_correlation_across_frames(
 
     Parameters
     ----------
-    files : list of Path or str
-        Sorted list of FITS file paths to process.
+    files : list of Path or str or None
+        Sorted list of FITS file paths to process, None for missing frames (see :func:`preprocess_cube`).
     delta_t : int
         Frame offset (in frames) between time-offset image pairs. Must be at least 1
     sparsity : int
@@ -721,6 +1048,8 @@ def accumulate_cross_correlation_across_frames(
         If True: will subtract the median of the cube. If Deflicker is applied, the median runs
         after it.
         Default False
+    time_avg_size: int, optional
+        Size of the running time averaging kernel in number of frames, see :func:`preprocess_cube`.
     az_smooth: int
         Will apply some smoothing over the azimuth gain.
 
@@ -759,7 +1088,7 @@ def accumulate_cross_correlation_across_frames(
         polar_nr=polar_nr, num_azimuth_bins=num_azimuth_bins, az_bin=az_bin,
         rotate90=rotate90, crop=effective_crop,
         do_polar_remap=do_polar_remap, az_smooth=az_smooth, time_win=time_win,
-        deflicker=deflicker, remove_temporal_median=remove_temporal_median,
+        deflicker=deflicker, remove_temporal_median=remove_temporal_median, time_avg_size=time_avg_size,
     )
 
     n_rows, n_cols = cube.shape[1:]
@@ -1321,7 +1650,7 @@ def plot_flow_map(data: PUNCHCube, rebin: int = 10, plot_errors: bool = True, vm
 @punch_flow(log_prints=True, timeout_seconds=21_600)
 def track_velocity(files: list[str] | list[Path],
                    product_code: str,
-                   frames_per_window: int=12,
+                   flow_window_hours: float = 6,
                    delta_t: int = 2,
                    sparsity: int = 1,
                    n_ofs: int = 101,
@@ -1334,28 +1663,30 @@ def track_velocity(files: list[str] | list[Path],
                    az_bin: int = 4,
                    vel_bin_width: int=4,
                    speed_max: float = 1000,
-                   buffer_target_hours: int=6,
+                   time_avg_hours: float = 6,
                    use_median: bool = True,
                    rotate90: bool = True,
                    remove_temporal_median: bool = True,
                    deflicker: bool = True,
-                   hdu: int = 1) -> PUNCHCube:
+                   hdu: int = 1,
+                   reference_time: datetime | None = None) -> PUNCHCube:
     """
     Generate velocity map using flow tracking.
 
     Parameters
     ----------
     files : list[str]
-        List of file paths for input data, in chronological order.  At least
-        ``frames_per_window + 2 * (buffer // 2) + 1`` files are required,
-        where ``buffer`` is computed by :func:`get_buffer` from the product
-        cadence, ``delta_t`` and ``buffer_target_hours``.
+        List of file paths for input data, in chronological order.  The number of
+        required frames is given by :func:`get_required_frame_count`, from the product
+        cadence, ``flow_window_hours`` and ``time_avg_hours``.
+        Missing frames are detected from the observation times and filled by linear interpolation
+        within the limits of :func:`check_missing_runs`.
 
     product_code: str
         Either 'CAM', 'PAM', 'CTM', or 'PTM'
 
-    frames_per_window: int=12
-        Number of frames in the tracking window before applying any stride delta_t
+    flow_window_hours: float, optional
+        Minimum duration of the flow map integration window in hours, see :func:`get_frames_per_window`
 
     delta_t : int, optional
         Time offset in frames between images
@@ -1395,8 +1726,10 @@ def track_velocity(files: list[str] | list[Path],
     speed_max: int, optional
         Maximum velocity to consider in the moments and peak calculation.
 
-    buffer_target_hours: int, optional
-        minimum duration for the buffer used to calculated temporal averages (mean, median, ...)
+    time_avg_hours: float, optional
+        Duration in hours of the running time-average kernel used by the deflicker and the temporal median removal.
+        It also sets the buffer of frames on either side of the flow map integration window, so that the kernel
+        centered on any frame of the window only covers actual frames.
 
     use_median: bool, optional
         Whether to use the median instead of the mean for the temporal averages
@@ -1414,6 +1747,13 @@ def track_velocity(files: list[str] | list[Path],
         Position of the header data unit in the FITS files holding the data.
         Default is 1 for RICE-compressed FITS (use 0 for uncompressed FITS).
 
+    reference_time: datetime, optional
+        Authoritative time of the velocity map, written to DATE-OBS. When set, the flow map integration
+        window is centered on it (see :func:`get_flow_window_start`): for an odd number of frames
+        the middle frame is the one nearest to it, for an even number of frames it falls between
+        the two middle frames. ``files`` may cover a wider time range than required. When None, the
+        leading files are used and the reference time is the middle of the flow map integration window.
+
     Returns
     -------
     ndcube.PUNCHCube
@@ -1423,13 +1763,6 @@ def track_velocity(files: list[str] | list[Path],
     # ---------------------------------------------------------------------------- #
     # Instrument constants                                                          #
     # ---------------------------------------------------------------------------- #
-    # Time interval (minutes) between consecutive frames for each data product
-    tcadence_min = {
-        "CAM": 32,
-        "CTM": 8,
-        "PTM": 4,
-        "PAM": 32,
-    }
     # Some astronomical constants
     arcsec_rad = 4.84814e-6  # 1 arcsec in rad
     au_km = 150e6  # Astronomical unit in km
@@ -1454,35 +1787,23 @@ def track_velocity(files: list[str] | list[Path],
         raise ValueError("annuli_centers_rs must have at least two elements")
 
     # We need to get a number of files sufficient to cover the integration time of the flow map + required buffer for
-    # an evenly sliding temporal mean of either side of the first and last frame of interest
-    buffer = get_buffer(frames_per_window, delta_t, tcadence_min[product_code], target_hours=buffer_target_hours)
-
-    # start index of time windows
-    tstart = buffer // 2  # be mindful of having even sliding of the time-median kernel
-    tend = tstart + frames_per_window
-    # the time slice should typically start at 0, unless punchbowl streams files differently.
-    file_first = 0
-    file_last = tend + buffer // 2
-    # Slice in the list of files required to make the temporal average background. The flow map integration
-    # window is centered in that timeline. To illustrate, with ta = temporal average of background and
-    # ft = flow time window:
+    # an evenly sliding temporal mean of either side of the first and last frame of interest.
+    # The flow map integration window [tstart, tend] is centered in that timeline. To illustrate, with
+    # ta = temporal average of background and ft = flow time window:
     # [ta start......ft start......ft end.......ta end]
-    file_slice = slice(file_first, file_last + 1)  # file_last inclusive
-    # number of expected files
-    nfiles_expected = file_last - file_first + 1
+    obs_times = [datetime.fromisoformat(fits.getheader(f, hdu)["DATE-OBS"]) for f in files]
+    slots, slot_times = get_frame_slots(obs_times, get_cadence_min(product_code))
+    if reference_time is not None:
+        reference_time = reference_time.replace(tzinfo=None)
+    # Missing frames are None in subset_files, and are interpolated during pre-processing
+    first, last, tstart, tend = select_frame_slots(slots, slot_times, product_code, flow_window_hours,
+                                                   time_avg_hours, reference_time)
+    subset_files = [None if slot is None else files[slot] for slot in slots[first:last + 1]]
+    if None in subset_files:
+        get_logger().info(f"Interpolating {subset_files.count(None)} missing {product_code} frames")
 
-    if len(files) < nfiles_expected:
-        msg = f"At least {nfiles_expected} files must be provided for flow tracking"
-        raise ValueError(msg)
-
-    # Get the files
-    # TODO: SOC need to adapt this to however the files are passed here
-    subset_files = files[file_slice]
-
-    # Get reference time from metadata for scaling units of solar radius
-    data = load_ndcube_from_fits(subset_files[0])
-    header = data.meta.to_fits_header(wcs=data.wcs)
-    reference_time = datetime.fromisoformat(header["DATE-OBS"])
+    # Get metadata for scaling units of solar radius
+    data = load_ndcube_from_fits(subset_files[0])  # the first selected slot is always an actual frame
 
     # Get annuli pixel limits, with associated crop coordinates for slicing the radial range of interest
     cdelt1 = data.wcs.wcs.cdelt[0]  # punch wfi native pixel scale in deg/pixel - should be 0.0225 deg/pixel
@@ -1490,6 +1811,19 @@ def track_velocity(files: list[str] | list[Path],
     polar_nr = round(max_elong_deg / cdelt1)  # radial axis size (pixels)
     arcsec_per_px = max_elong_deg * 3600 / polar_nr
     km_per_px = arcsec_per_px * arcsec_km
+
+    def slot_date(slot: int, key: str) -> datetime:
+        """Get a date keyword of a slot, offset from the nearest actual frame for a missing frame."""
+        nearest = min((i for i in range(first, last + 1) if slots[i] is not None), key=lambda i: abs(i - slot))
+        header = fits.getheader(files[slots[nearest]], hdu)
+        return datetime.fromisoformat(header[key]) + (slot_times[slot] - slot_times[nearest])
+
+    date_beg = slot_date(first + tstart, "DATE-BEG")
+    date_end = slot_date(first + tend, "DATE-END")
+    date_avg = date_beg + (date_end - date_beg) / 2
+    if reference_time is None:
+        # Deterministic fallback: the middle of the flow map integration window
+        reference_time = date_avg
 
     rs_arcsec = sun.angular_radius(reference_time).to_value(u.arcsec)
     annuli = [get_annulus(center, annuli_width_rs, arcsec_per_px, rs_arcsec) for center in annuli_centers_rs]
@@ -1500,7 +1834,7 @@ def track_velocity(files: list[str] | list[Path],
     r_high = max(a[1] for a in annuli)
 
     # Cross-correlation velocity offset based on expected speed, and velocity lookup axis
-    effective_cadence_sec = tcadence_min[product_code] * delta_t * 60  # effective time step between frame pairs (s)
+    effective_cadence_sec = get_cadence_min(product_code) * delta_t * 60  # effective time step between frame pairs (s)
     expected_displacement_px = expected_wind_kps / km_per_px * effective_cadence_sec
     central_offset = int(expected_displacement_px)
     _, x_kps = build_velocity_axis(n_ofs, central_offset, expected_wind_kps, delta_px=delta_px)
@@ -1514,6 +1848,7 @@ def track_velocity(files: list[str] | list[Path],
         "rotate90": rotate90,
         "remove_temporal_median": remove_temporal_median,
         "deflicker": deflicker,
+        "time_avg_size": get_time_avg_size(product_code, time_avg_hours),
     }
 
     speeds, sigmas = process_corr_vel(subset_files, preprocess_opts, delta_t, sparsity, n_ofs, polar_nr,
@@ -1526,15 +1861,9 @@ def track_velocity(files: list[str] | list[Path],
     # ------------------------------------------------------------------ #
     output_meta = NormalizedMetadata.load_template("VAM", "3")
 
-    with fits.open(subset_files[tstart]) as hdul:
-        output_meta["DATE-BEG"] = hdul[hdu].header["DATE-BEG"]
-
-    with fits.open(subset_files[tend]) as hdul:
-        output_meta["DATE-END"] = hdul[hdu].header["DATE-END"]
-
-    date_beg = datetime.fromisoformat(output_meta["DATE-BEG"].value)
-    date_end = datetime.fromisoformat(output_meta["DATE-END"].value)
-    output_meta["DATE-AVG"] = (date_beg + (date_end - date_beg) / 2).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
+    output_meta["DATE-BEG"] = date_beg.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
+    output_meta["DATE-END"] = date_end.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
+    output_meta["DATE-AVG"] = date_avg.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
     output_meta["DATE-OBS"] = reference_time.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
 
     output_meta["DELTAT"] = delta_t
