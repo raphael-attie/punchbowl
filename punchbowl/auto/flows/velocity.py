@@ -1,7 +1,7 @@
 import json
 import inspect
 from bisect import bisect_left
-from datetime import datetime, time, timedelta
+from datetime import time, datetime, timedelta
 
 import numpy as np
 from dateutil.parser import parse as parse_datetime_str
@@ -14,14 +14,8 @@ from punchbowl.auto.control.scheduler import generic_scheduler_flow_logic
 from punchbowl.auto.control.util import get_database_session, load_pipeline_configuration
 from punchbowl.auto.flows.util import file_name_to_full_path
 from punchbowl.level3.flow import generate_level3_velocity_flow
-from punchbowl.level3.velocity import (
-    get_cadence_min,
-    get_frame_slots,
-    select_frame_slots,
-    track_velocity,
-)
+from punchbowl.level3.velocity import get_cadence_min, get_frame_slots, select_frame_slots, track_velocity
 from punchbowl.prefect import get_logger
-
 
 # Defaults of the flow tracking parameters, taken from track_velocity which is authoritative for them. They are used
 # for any parameter not set in the pipeline configuration, so call_data always holds the full set of parameters.
